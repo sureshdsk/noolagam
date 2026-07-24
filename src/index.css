@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Be Vietnam Pro', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar utilities */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #877369;
+  border-radius: 10px;
+}
+
+/* Collapsed sidebar animation */
+nav.collapsed {
+  width: 80px !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+nav.collapsed .nav-text, 
+nav.collapsed .nav-subtitle,
+nav.collapsed .brand-text {
+  display: none !important;
+}
+nav.collapsed a, nav.collapsed button {
+  justify-content: center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  width: 48px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+main.sidebar-collapsed {
+  margin-left: 80px !important;
+}
+
+/* Parchment texture background */
+.parchment-texture {
+  background-image: radial-gradient(#8b451310 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.divider-perforation {
+  position: relative;
+  height: 1px;
+  background: #8b451330;
+  margin: 24px 0;
+}
+.divider-perforation::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background: #fff8f0;
+  border: 1.5px solid #8b451330;
+  border-radius: 50%;
+}

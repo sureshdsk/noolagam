@@ -1,0 +1,6 @@
+{
+  "name": "ஓலைச்சுவடி - தமிழ் இலக்கியத் தொகுப்பு",
+  "description": "Tamil Literary Heritage digital library, interactive reader, audiobook player, and bookmarks platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
