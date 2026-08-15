@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "cli": "tsx cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
