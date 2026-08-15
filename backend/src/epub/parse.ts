@@ -37,7 +37,12 @@ export interface ParsedEpub {
 }
 
 export function parseEpub(bytes: Uint8Array, bookId: string): ParsedEpub {
-  const files = unzipSync(bytes);
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(bytes);
+  } catch {
+    throw new Error("not an EPUB: file is not a valid zip archive");
+  }
   const dec = new TextDecoder("utf-8");
   const str = (path: string): string | null => {
     const data = files[path];

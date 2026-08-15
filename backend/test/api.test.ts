@@ -77,7 +77,7 @@ async function seed(): Promise<NodeSqliteDb> {
 
 function makeApp(
   db: NodeSqliteDb,
-  opts: { enforce?: boolean; store?: ObjectStore } = {},
+  opts: { enforce?: boolean; store?: ObjectStore; adminApiKey?: string } = {},
 ) {
   const store = opts.store ?? new FakePresignStore();
   const auth: AuthDeps = {
@@ -86,7 +86,12 @@ function makeApp(
     issuer: "https://clerk.test",
     fetchJwks: async () => [(await getTokenKey()).publicJwk],
   };
-  return createApp({ db: () => db, store: () => store, auth: () => auth });
+  return createApp({
+    db: () => db,
+    store: () => store,
+    auth: () => auth,
+    adminApiKey: () => opts.adminApiKey,
+  });
 }
 
 describe("GET /v1/books", () => {

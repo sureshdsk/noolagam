@@ -135,7 +135,7 @@ export class S3Store implements ObjectStore {
   }
 
   private canonicalUri(key: string): string {
-    return `/${this.cfg.bucket}/${awsUriEncode(key, true)}`;
+    return `/${this.cfg.bucket}/${awsUriEncode(key, false)}`;
   }
 
   private async request(

@@ -1,13 +1,13 @@
 import { readFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseEpub, type ParsedEpub } from "./src/epub/parse.js";
-import { buildArtifacts } from "./src/pipeline/artifacts.js";
-import { publishBook, manifestKeyOf } from "./src/pipeline/publish.js";
+import { processEpubBook } from "./src/pipeline/run.js";
 import { migrate } from "./src/db/migrate.js";
 import { FsStore } from "./src/node/fs-store.js";
 import { openSqliteDb } from "./src/node/sqlite.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
+import { slugifyBookId } from "./src/util/slug.js";
 
 const usage = `noolagam backend CLI
 
@@ -57,13 +57,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function bookIdFor(file: string): string {
-  const base = file.split("/").pop() ?? file;
-  const noExt = base.replace(/\.epub$/i, "");
-  const slug = noExt
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^\p{L}\p{N}_-]+/gu, "");
-  return slug.length > 0 ? slug : "book";
+  return slugifyBookId(file);
 }
 
 async function makeStore(outDir: string): Promise<{ store: ObjectStore; label: string }> {
@@ -137,24 +131,17 @@ async function run(): Promise<void> {
 
   console.log(`store: ${label}\ndb:    ${resolve(dbPath)}`);
   for (const epub of args.epubs) {
-    const parsed = parseEpub(new Uint8Array(await readFile(resolve(epub))), bookIdFor(epub));
-    const artifacts = buildArtifacts(parsed);
-    const manifestJson = artifacts
-      .find((f) => f.path === manifestKeyOf(parsed.bookId))!
-      .data as string;
-    const previousBytes = await store.get(manifestKeyOf(parsed.bookId));
-    const previousManifest = previousBytes
-      ? new TextDecoder().decode(previousBytes)
-      : null;
-    for (const file of artifacts) {
-      await store.put(file.path, file.data, {
-        contentType: file.path.endsWith(".json") ? "application/json" : undefined,
-      });
-    }
-    const result = await publishBook(db, parsed, manifestJson, previousManifest);
+    const bytes = new Uint8Array(await readFile(resolve(epub)));
+    const bookId = bookIdFor(epub);
+    const { parsed, publish, artifactCount } = await processEpubBook(
+      db,
+      store,
+      bytes,
+      bookId,
+    );
     summarize(epub, parsed);
     console.log(
-      `  publish: version ${result.contentVersion}${result.changed ? "" : " (unchanged)"} -> ${dbPath}`,
+      `  artifacts: ${artifactCount} files; publish: version ${publish.contentVersion}${publish.changed ? "" : " (unchanged)"} -> ${dbPath}`,
     );
   }
 }

@@ -16,5 +16,8 @@
   "vars": {
     "AUTH_ENFORCE": "false",
     "S3_REGION": "auto"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
   }
 }

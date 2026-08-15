@@ -2,6 +2,9 @@ import { createApp } from "./src/http/app.js";
 import { D1Db, type D1DatabaseLike } from "./src/db/d1.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
+import { dueJobs } from "./src/pipeline/jobs.js";
+import { executeJob } from "./src/http/routes/jobs.js";
+import { migrate } from "./src/db/migrate.js";
 
 export interface Env {
   DB: D1DatabaseLike;
@@ -9,6 +12,8 @@ export interface Env {
   CLERK_JWKS_URL?: string;
   CLERK_ISSUER?: string;
   CLERK_AUDIENCE?: string;
+  ADMIN_API_KEY?: string;
+  MAINTENANCE_SKIP?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;
   S3_BUCKET?: string;
@@ -16,22 +21,43 @@ export interface Env {
   S3_SECRET_ACCESS_KEY?: string;
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const s3 = s3ConfigFromEnv(env as unknown as Record<string, string | undefined>);
-    if (!s3) throw new Error("S3 storage not configured (set S3_* env vars)");
-    const store = (): ObjectStore => new S3Store(s3);
+function makeStore(env: Env): () => ObjectStore {
+  const s3 = s3ConfigFromEnv(env as unknown as Record<string, string | undefined>);
+  if (!s3) throw new Error("S3 storage not configured (set S3_* env vars or secrets)");
+  return () => new S3Store(s3);
+}
 
-    const app = createApp({
-      db: () => new D1Db(env.DB),
-      store,
-      auth: () => ({
-        enforce: env.AUTH_ENFORCE === "true",
-        jwksUrl: env.CLERK_JWKS_URL,
-        issuer: env.CLERK_ISSUER,
-        audience: env.CLERK_AUDIENCE,
-      }),
-    });
-    return app.fetch(request);
+function handler(env: Env) {
+  const store = makeStore(env);
+  return createApp({
+    db: () => new D1Db(env.DB),
+    store,
+    auth: () => ({
+      enforce: env.AUTH_ENFORCE === "true",
+      jwksUrl: env.CLERK_JWKS_URL,
+      issuer: env.CLERK_ISSUER,
+      audience: env.CLERK_AUDIENCE,
+    }),
+    adminApiKey: () => env.ADMIN_API_KEY,
+  });
+}
+
+export default {
+  fetch(request: Request, env: Env): Response | Promise<Response> {
+    return handler(env).fetch(request);
+  },
+
+  async scheduled(_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<void> {
+    if (env.MAINTENANCE_SKIP === "true") return;
+    const db = new D1Db(env.DB);
+    const store = makeStore(env);
+    const work = (async () => {
+      await migrate(db);
+      for (const job of await dueJobs(db)) {
+        if (!job.book_id) continue;
+        await executeJob(db, store(), job.id, null);
+      }
+    })();
+    ctx.waitUntil(work);
   },
 };

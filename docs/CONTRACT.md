@@ -73,7 +73,8 @@ Chapter JSON is typed semantic blocks — never raw HTML (see architecture.md):
 | `GET /v1/books/{bookId}/chapters/{idx}` | user | P3 ✅ |
 | `GET /v1/books/{bookId}/assets?type=chapters,audio,cover` | user | P3 ✅ |
 | `GET /v1/books/{bookId}/cover` | public, rate-limited, 302 | P3 ✅ |
-| `POST /v1/jobs`, `GET /v1/jobs/{id}` | admin | P4 |
+| `POST /v1/jobs` (multipart `file`) | admin (`X-Admin-Key`) | P4 ✅ |
+| `GET /v1/jobs/{id}` · `GET /v1/jobs?status=` | admin | P4 ✅ |
 
 Errors: RFC 7807 `application/problem+json`. Pagination: `?page=&limit=` →
 `{items, page, total}`. Full contract: implementation-plan.md §API contract.
@@ -94,3 +95,29 @@ npm run lint        # eslint
 npm run dev         # wrangler dev → http://localhost:8787/v1/health
 npm run cli -- --help
 ```
+
+Local object storage (optional — wrangler dev needs real S3 endpoints):
+
+```
+docker run -d --name noolagam-minio -p 9100:9000 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data
+docker exec noolagam-minio mc alias set local http://localhost:9000 minioadmin minioadmin
+docker exec noolagam-minio mc mb local/noolagam-dev
+```
+
+`backend/.dev.vars` then points `S3_ENDPOINT=http://localhost:9100` (see
+`.env.example`). With MinIO up: apply schema
+(`npx wrangler d1 execute noolagam-catalog --local --file=schema.sql`), submit a
+book (`curl -X POST localhost:8787/v1/jobs -H 'x-admin-key: …' -F
+file=@../assets/books/deiva_yaanai/deiva_yaanai.epub`), then browse `/v1/books`.
+
+## Deployment notes
+
+- Worker runs the pipeline inline via `waitUntil` (fine for `wrangler dev` and
+  paid Workers; free-tier CPU limits are exceeded by large books — use the CLI,
+  a queue, or Containers there). Cron trigger (`*/5 * * * *`) reclaims
+  stuck/pending jobs via lease expiry.
+- DB: D1 in production (`npx wrangler d1 migrations` / `--file=schema.sql`).
+- Storage: any S3 endpoint (R2: `https://<account>.r2.cloudflarestorage.com`,
+  region `auto`).
