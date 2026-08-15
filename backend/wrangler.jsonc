@@ -1,0 +1,6 @@
+{
+  // Noolagam API worker. Bindings (D1, R2/S3 env vars) are added in later phases.
+  "name": "noolagam-api",
+  "main": "worker.ts",
+  "compatibility_date": "2026-08-01"
+}
