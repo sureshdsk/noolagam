@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Db } from "../db/types.js";
 import type { ObjectStore } from "../storage/types.js";
+import type { LlmConfig } from "../llm/client.js";
 import { bookRoutes } from "./routes/books.js";
 import { contentRoutes } from "./routes/content.js";
 import { jobsRoutes } from "./routes/jobs.js";
@@ -12,6 +13,7 @@ export interface AppDeps {
   store: () => ObjectStore;
   auth: () => AuthDeps;
   adminApiKey: () => string | undefined;
+  llm: () => LlmConfig | null;
 }
 
 export function createApp(deps: AppDeps): Hono {

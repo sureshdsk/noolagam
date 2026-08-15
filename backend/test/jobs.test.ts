@@ -27,6 +27,7 @@ async function makeApp(opts: { adminApiKey?: string } = {}) {
     store: () => store,
     auth: () => ({ enforce: false }),
     adminApiKey: () => opts.adminApiKey,
+    llm: () => null,
   });
   return { app, db };
 }
@@ -120,6 +121,58 @@ describe.skipIf(!existsSync(DY_PATH))("POST /v1/jobs end-to-end (real epub)", ()
     const job = (await jobRes.json()) as { status: string; error: string | null };
     expect(job.status).toBe("failed");
     expect(job.error).toContain("EPUB");
+  });
+});
+
+describe("POST /v1/jobs (generate_summaries)", () => {
+  async function seededApp(opts: { adminApiKey?: string } = {}) {
+    const { app, db } = await makeApp(opts);
+    await db.run(
+      `INSERT INTO books (id, title, language, total_chapters, content_version, status)
+       VALUES ('b1', 'நூல்', 'ta', 1, 1, 'published')`,
+    );
+    await db.run(
+      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
+       VALUES ('b1:0', 'b1', 0, 'முதல்', 10, 'books/b1/chapters/0.json')`,
+    );
+    return { app, db };
+  }
+
+  it("rejects invalid JSON submissions", async () => {
+    const { app } = await seededApp({ adminApiKey: "secret123" });
+    const res = await app.request("/v1/jobs", {
+      method: "POST",
+      headers: { "x-admin-key": "secret123", "content-type": "application/json" },
+      body: JSON.stringify({ type: "bogus" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("404s for unknown books", async () => {
+    const { app } = await seededApp({ adminApiKey: "secret123" });
+    const res = await app.request("/v1/jobs", {
+      method: "POST",
+      headers: { "x-admin-key": "secret123", "content-type": "application/json" },
+      body: JSON.stringify({ type: "generate_summaries", book_id: "ghost" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("fails the job with a clear error when LLM is unconfigured", async () => {
+    const { app } = await seededApp({ adminApiKey: "secret123" });
+    const res = await app.request("/v1/jobs", {
+      method: "POST",
+      headers: { "x-admin-key": "secret123", "content-type": "application/json" },
+      body: JSON.stringify({ type: "generate_summaries", book_id: "b1" }),
+    });
+    expect(res.status).toBe(202);
+    const { id } = (await res.json()) as { id: string };
+    const jobRes = await app.request(`/v1/jobs/${id}`, {
+      headers: { "x-admin-key": "secret123" },
+    });
+    const job = (await jobRes.json()) as { status: string; error: string | null };
+    expect(job.status).toBe("failed");
+    expect(job.error).toContain("LLM not configured");
   });
 });
 

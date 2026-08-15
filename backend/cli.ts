@@ -1,13 +1,15 @@
 import { readFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseEpub, type ParsedEpub } from "./src/epub/parse.js";
-import { processEpubBook } from "./src/pipeline/run.js";
+import { processEpubBook, summariesKey } from "./src/pipeline/run.js";
 import { migrate } from "./src/db/migrate.js";
 import { FsStore } from "./src/node/fs-store.js";
 import { openSqliteDb } from "./src/node/sqlite.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
 import { slugifyBookId } from "./src/util/slug.js";
+import { chatCompletion, llmConfigFromEnv } from "./src/llm/client.js";
+import { generateBookSummaries } from "./src/llm/summaries.js";
 
 const usage = `noolagam backend CLI
 
@@ -17,12 +19,14 @@ Usage:
 Commands:
   process <epub...> [--out <dir>] [--db <file>]   Parse, write artifacts, publish catalog rows
   verify <epub...>                                Parse and summarize EPUBs without writing
+  summarize <epub> [--out <dir>]                  Optional LLM stage: chapter + book summaries
   books [--db <file>]                             List published books from the catalog DB
   help                                            Show this help
 
 Storage: uses S3-compatible storage when S3_ENDPOINT/S3_BUCKET/S3_ACCESS_KEY_ID/
 S3_SECRET_ACCESS_KEY are set (see .env.example); otherwise writes to --out (default ./out).
 Database: SQLite file at --db (default <out>/catalog.db).
+LLM: summarize requires LLM_BASE_URL/LLM_API_KEY/LLM_MODEL; skipped otherwise.
 `;
 
 interface Args {
@@ -106,6 +110,43 @@ async function run(): Promise<void> {
       console.log(
         `${row.id}  v${row.content_version}  ${row.status}  ${row.total_chapters} ch  a11y=${row.a11y_score}  ${row.title}`,
       );
+    }
+    return;
+  }
+
+  if (args.command === "summarize") {
+    if (args.epubs.length === 0) {
+      console.error("summarize requires an epub path");
+      process.exitCode = 1;
+      return;
+    }
+    const llm = llmConfigFromEnv(process.env as Record<string, string | undefined>);
+    if (!llm) {
+      console.log("LLM not configured (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL) — skipping summaries.");
+      return;
+    }
+    const { store } = await makeStore(args.out);
+    for (const epub of args.epubs) {
+      const parsed = parseEpub(
+        new Uint8Array(await readFile(resolve(epub))),
+        bookIdFor(epub),
+      );
+      const inputs = parsed.chapters.map((ch) => ({
+        idx: ch.idx,
+        title: ch.title,
+        text: ch.blocks
+          .map((b) => (b.t === "img" ? "" : b.t === "list" ? b.items.join(" ") : b.t === "table" ? b.rows.map((r) => r.join(" ")).join(" ") : b.text))
+          .join(" "),
+      }));
+      const summaries = await generateBookSummaries(
+        (messages) => chatCompletion(llm, messages),
+        inputs,
+      );
+      await store.put(summariesKey(parsed.bookId), JSON.stringify(summaries, null, 2), {
+        contentType: "application/json",
+      });
+      console.log(`\n${epub}\n  summaries: ${summaries.chapterSummaries.length} chapters -> ${summariesKey(parsed.bookId)}`);
+      console.log(`  நூல் சுருக்கம்: ${summaries.bookSummary.slice(0, 200)}…`);
     }
     return;
   }

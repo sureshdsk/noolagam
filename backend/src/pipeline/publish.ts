@@ -25,6 +25,14 @@ export function manifestsDiffer(
   return JSON.stringify(JSON.parse(previous)) !== JSON.stringify(JSON.parse(next));
 }
 
+export async function updateBookSummary(
+  db: Db,
+  bookId: string,
+  summary: string,
+): Promise<void> {
+  await db.run("UPDATE books SET summary = ? WHERE id = ?", [summary, bookId]);
+}
+
 export async function publishBook(
   db: Db,
   parsed: ParsedEpub,

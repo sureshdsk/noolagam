@@ -11,7 +11,7 @@ export interface JobRow {
   updated_at: string;
 }
 
-export const JOB_TYPES = ["process_epub"] as const;
+export const JOB_TYPES = ["process_epub", "generate_summaries"] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const LEASE_MINUTES = 10;

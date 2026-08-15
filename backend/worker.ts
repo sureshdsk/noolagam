@@ -2,6 +2,7 @@ import { createApp } from "./src/http/app.js";
 import { D1Db, type D1DatabaseLike } from "./src/db/d1.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
+import { llmConfigFromEnv } from "./src/llm/client.js";
 import { dueJobs } from "./src/pipeline/jobs.js";
 import { executeJob } from "./src/http/routes/jobs.js";
 import { migrate } from "./src/db/migrate.js";
@@ -14,6 +15,9 @@ export interface Env {
   CLERK_AUDIENCE?: string;
   ADMIN_API_KEY?: string;
   MAINTENANCE_SKIP?: string;
+  LLM_BASE_URL?: string;
+  LLM_API_KEY?: string;
+  LLM_MODEL?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;
   S3_BUCKET?: string;
@@ -29,6 +33,7 @@ function makeStore(env: Env): () => ObjectStore {
 
 function handler(env: Env) {
   const store = makeStore(env);
+  const llm = () => llmConfigFromEnv(env as unknown as Record<string, string | undefined>);
   return createApp({
     db: () => new D1Db(env.DB),
     store,
@@ -39,6 +44,7 @@ function handler(env: Env) {
       audience: env.CLERK_AUDIENCE,
     }),
     adminApiKey: () => env.ADMIN_API_KEY,
+    llm,
   });
 }
 
@@ -51,11 +57,12 @@ export default {
     if (env.MAINTENANCE_SKIP === "true") return;
     const db = new D1Db(env.DB);
     const store = makeStore(env);
+    const llm = () => llmConfigFromEnv(env as unknown as Record<string, string | undefined>);
     const work = (async () => {
       await migrate(db);
       for (const job of await dueJobs(db)) {
         if (!job.book_id) continue;
-        await executeJob(db, store(), job.id, null);
+        await executeJob(db, store(), job.id, null, llm);
       }
     })();
     ctx.waitUntil(work);

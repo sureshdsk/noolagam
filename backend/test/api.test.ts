@@ -91,6 +91,7 @@ function makeApp(
     store: () => store,
     auth: () => auth,
     adminApiKey: () => opts.adminApiKey,
+    llm: () => null,
   });
 }
 

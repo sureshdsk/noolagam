@@ -27,6 +27,7 @@ books/{bookId}/fixed.epub
 books/{bookId}/cover.jpg
 books/{bookId}/audio/{n}.m4a         # optional
 books/{bookId}/report.json           # a11y report
+books/{bookId}/summaries.json         # optional LLM stage output
 users/{uid}/state.json
 config/app.json
 ```
@@ -56,8 +57,10 @@ Chapter JSON is typed semantic blocks — never raw HTML (see architecture.md):
 2. **fix** — a11y pass. v1: detect (alt text, `lang`, heading hierarchy, table
    headers) → `report.json`. Repair lands later.
 3. **emit** — chapter block JSON, cover, manifest, search index.
-4. **llm** *(optional)* — chapter + book summaries via OpenAI-compatible API.
-   Skipped (status `skipped`) when `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` unset.
+4. **llm** *(optional)* — chapter + book summaries via OpenAI-compatible API
+   (`books/{id}/summaries.json` + `books.summary`). Runs as its own
+   `generate_summaries` job; requires `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`,
+   otherwise the job fails with a clear error and publishing is unaffected.
 5. **audio** *(optional, later)* — per-chapter TTS.
 6. **publish** — upsert `books`/`chapters` rows, `status='published'`,
    bump `content_version`, write `manifest.json`.
@@ -73,7 +76,7 @@ Chapter JSON is typed semantic blocks — never raw HTML (see architecture.md):
 | `GET /v1/books/{bookId}/chapters/{idx}` | user | P3 ✅ |
 | `GET /v1/books/{bookId}/assets?type=chapters,audio,cover` | user | P3 ✅ |
 | `GET /v1/books/{bookId}/cover` | public, rate-limited, 302 | P3 ✅ |
-| `POST /v1/jobs` (multipart `file`) | admin (`X-Admin-Key`) | P4 ✅ |
+| `POST /v1/jobs` (multipart `file` for `process_epub`; JSON `{type: "generate_summaries", book_id}` for the optional LLM stage) | admin (`X-Admin-Key`) | P4 ✅ |
 | `GET /v1/jobs/{id}` · `GET /v1/jobs?status=` | admin | P4 ✅ |
 
 Errors: RFC 7807 `application/problem+json`. Pagination: `?page=&limit=` →
