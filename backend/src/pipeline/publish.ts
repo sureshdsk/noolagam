@@ -1,4 +1,6 @@
-import type { Db } from "../db/types.js";
+import { eq } from "drizzle-orm";
+import type { OrmDb } from "../db/index.js";
+import { books, chapters } from "../db/tables.js";
 import type { ParsedEpub } from "../epub/parse.js";
 import { storageKey } from "./artifacts.js";
 
@@ -7,10 +9,6 @@ export interface PublishResult {
   contentVersion: number;
   changed: boolean;
   totalChapters: number;
-}
-
-interface BookRow {
-  content_version: number;
 }
 
 export function manifestKeyOf(bookId: string): string {
@@ -26,74 +24,65 @@ export function manifestsDiffer(
 }
 
 export async function updateBookSummary(
-  db: Db,
+  db: OrmDb,
   bookId: string,
   summary: string,
 ): Promise<void> {
-  await db.run("UPDATE books SET summary = ? WHERE id = ?", [summary, bookId]);
+  await db.update(books).set({ summary }).where(eq(books.id, bookId));
 }
 
 export async function publishBook(
-  db: Db,
+  db: OrmDb,
   parsed: ParsedEpub,
   manifestJson: string,
   previousManifest: string | null,
 ): Promise<PublishResult> {
   const { bookId } = parsed;
-  const existing = await db.get<BookRow>("SELECT content_version FROM books WHERE id = ?", [
-    bookId,
-  ]);
+  const existing = await db
+    .select({ contentVersion: books.contentVersion })
+    .from(books)
+    .where(eq(books.id, bookId))
+    .get();
   const changed = manifestsDiffer(previousManifest, manifestJson);
   const contentVersion = existing
     ? changed
-      ? existing.content_version + 1
-      : existing.content_version
+      ? existing.contentVersion + 1
+      : existing.contentVersion
     : 1;
   const publishedAt = new Date().toISOString();
 
-  await db.run(
-    `INSERT INTO books (id, title, author, summary, language, cover_key, manifest_key,
-                        total_chapters, has_audio, a11y_score, content_version, status, published_at)
-     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, ?, ?, 'published', ?)
-     ON CONFLICT(id) DO UPDATE SET
-       title = excluded.title,
-       author = excluded.author,
-       language = excluded.language,
-       cover_key = excluded.cover_key,
-       manifest_key = excluded.manifest_key,
-       total_chapters = excluded.total_chapters,
-       a11y_score = excluded.a11y_score,
-       content_version = excluded.content_version,
-       status = 'published',
-       published_at = excluded.published_at`,
-    [
-      bookId,
-      parsed.metadata.title,
-      parsed.metadata.author,
-      parsed.metadata.language,
-      parsed.cover ? storageKey(bookId, "cover.jpg") : null,
-      storageKey(bookId, "manifest.json"),
-      parsed.chapters.length,
-      parsed.a11y.score,
-      contentVersion,
-      publishedAt,
-    ],
-  );
+  const values = {
+    id: bookId,
+    title: parsed.metadata.title,
+    author: parsed.metadata.author,
+    summary: null as string | null,
+    language: parsed.metadata.language,
+    coverKey: parsed.cover ? storageKey(bookId, "cover.jpg") : null,
+    manifestKey: storageKey(bookId, "manifest.json"),
+    totalChapters: parsed.chapters.length,
+    hasAudio: 0,
+    a11yScore: parsed.a11y.score,
+    contentVersion,
+    status: "published",
+    publishedAt,
+  };
+  const { id: _id, ...setValues } = values;
+  void _id;
+  await db
+    .insert(books)
+    .values(values)
+    .onConflictDoUpdate({ target: books.id, set: setValues });
 
-  await db.run("DELETE FROM chapters WHERE book_id = ?", [bookId]);
+  await db.delete(chapters).where(eq(chapters.bookId, bookId));
   for (const ch of parsed.chapters) {
-    await db.run(
-      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        `${bookId}:${ch.idx}`,
-        bookId,
-        ch.idx,
-        ch.title,
-        ch.wordCount,
-        storageKey(bookId, "chapters", `${ch.idx}.json`),
-      ],
-    );
+    await db.insert(chapters).values({
+      id: `${bookId}:${ch.idx}`,
+      bookId,
+      idx: ch.idx,
+      title: ch.title,
+      wordCount: ch.wordCount,
+      contentKey: storageKey(bookId, "chapters", `${ch.idx}.json`),
+    });
   }
 
   return {

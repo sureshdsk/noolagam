@@ -1,14 +1,17 @@
+import { drizzle } from "drizzle-orm/d1";
+import type { D1Database } from "@cloudflare/workers-types";
 import { createApp } from "./src/http/app.js";
-import { D1Db, type D1DatabaseLike } from "./src/db/d1.js";
+import type { OrmDb } from "./src/db/index.js";
+import * as schema from "./src/db/tables.js";
+import { migrate } from "./src/db/migrate.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
 import { llmConfigFromEnv } from "./src/llm/client.js";
 import { dueJobs } from "./src/pipeline/jobs.js";
 import { executeJob } from "./src/http/routes/jobs.js";
-import { migrate } from "./src/db/migrate.js";
 
 export interface Env {
-  DB: D1DatabaseLike;
+  DB: D1Database;
   AUTH_ENFORCE?: string;
   CLERK_JWKS_URL?: string;
   CLERK_ISSUER?: string;
@@ -31,11 +34,19 @@ function makeStore(env: Env): () => ObjectStore {
   return () => new S3Store(s3);
 }
 
+function makeDb(env: Env): OrmDb {
+  // D1's async drizzle instance is runtime-compatible with the awaited-query
+  // style used across src/ (all queries are awaited); cast to the shared
+  // sync-flavored type.
+  return drizzle(env.DB, { schema }) as unknown as OrmDb;
+}
+
 function handler(env: Env) {
   const store = makeStore(env);
+  const db = makeDb(env);
   const llm = () => llmConfigFromEnv(env as unknown as Record<string, string | undefined>);
   return createApp({
-    db: () => new D1Db(env.DB),
+    db: () => db,
     store,
     auth: () => ({
       enforce: env.AUTH_ENFORCE === "true",
@@ -55,13 +66,13 @@ export default {
 
   async scheduled(_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<void> {
     if (env.MAINTENANCE_SKIP === "true") return;
-    const db = new D1Db(env.DB);
+    const db = makeDb(env);
     const store = makeStore(env);
     const llm = () => llmConfigFromEnv(env as unknown as Record<string, string | undefined>);
     const work = (async () => {
-      await migrate(db);
+      await migrate(env.DB);
       for (const job of await dueJobs(db)) {
-        if (!job.book_id) continue;
+        if (!job.bookId) continue;
         await executeJob(db, store(), job.id, null, llm);
       }
     })();

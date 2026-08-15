@@ -1,19 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDb } from "../src/node/sqlite.js";
-import { migrate } from "../src/db/migrate.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
 import { MemoryStore } from "../src/storage/memory.js";
 import { buildArtifacts, storageKey } from "../src/pipeline/artifacts.js";
 import { publishBook, manifestKeyOf } from "../src/pipeline/publish.js";
 import type { ParsedEpub } from "../src/epub/parse.js";
-
-function testDb(): NodeSqliteDb {
-  const db = new NodeSqliteDb(new DatabaseSync(":memory:"));
-  return db;
-}
+import { openDb } from "../src/node/db.js";
+import { migrate } from "../src/db/migrate.js";
+import { SCHEMA_SQL } from "../src/db/schema.js";
+import { books, chapters } from "../src/db/tables.js";
+import { eq } from "drizzle-orm";
 
 function fakeParsed(chapterTitles: string[]): ParsedEpub {
   return {
@@ -35,6 +31,12 @@ function fakeParsed(chapterTitles: string[]): ParsedEpub {
   };
 }
 
+async function testDb() {
+  const { sqlite, db } = openDb(":memory:");
+  await migrate(sqlite);
+  return db;
+}
+
 describe("schema", () => {
   it("embedded SCHEMA_SQL matches schema.sql (no drift)", async () => {
     const file = await readFile(
@@ -47,8 +49,7 @@ describe("schema", () => {
 
 describe("publishBook", () => {
   it("creates book + chapter rows at version 1", async () => {
-    const db = testDb();
-    await migrate(db);
+    const db = await testDb();
     const store = new MemoryStore();
     const parsed = fakeParsed(["முதல்", "இரண்டாம்"]);
 
@@ -62,28 +63,27 @@ describe("publishBook", () => {
       totalChapters: 2,
     });
 
-    const book = await db.get<{
-      title: string;
-      total_chapters: number;
-      status: string;
-      content_version: number;
-      cover_key: string;
-    }>("SELECT title, total_chapters, status, content_version, cover_key FROM books WHERE id = 'testbook'");
+    const book = await db
+      .select()
+      .from(books)
+      .where(eq(books.id, "testbook"))
+      .get();
     expect(book?.title).toBe("சோதனை நூல்");
-    expect(book?.total_chapters).toBe(2);
+    expect(book?.totalChapters).toBe(2);
     expect(book?.status).toBe("published");
-    expect(book?.cover_key).toBe("books/testbook/cover.jpg");
+    expect(book?.coverKey).toBe("books/testbook/cover.jpg");
 
-    const chapters = await db.all<{ idx: number; title: string }>(
-      "SELECT idx, title FROM chapters WHERE book_id = 'testbook' ORDER BY idx",
-    );
-    expect(chapters.map((c) => c.idx)).toEqual([0, 1]);
-    expect(chapters[1]?.title).toBe("இரண்டாம்");
+    const rows = await db
+      .select({ idx: chapters.idx, title: chapters.title })
+      .from(chapters)
+      .where(eq(chapters.bookId, "testbook"))
+      .orderBy(chapters.idx);
+    expect(rows.map((c) => c.idx)).toEqual([0, 1]);
+    expect(rows[1]?.title).toBe("இரண்டாம்");
   });
 
   it("is idempotent: identical republish keeps version", async () => {
-    const db = testDb();
-    await migrate(db);
+    const db = await testDb();
     const store = new MemoryStore();
     const parsed = fakeParsed(["முதல்", "இரண்டாம்"]);
 
@@ -97,8 +97,7 @@ describe("publishBook", () => {
   });
 
   it("bumps content_version when manifest changes", async () => {
-    const db = testDb();
-    await migrate(db);
+    const db = await testDb();
     const store = new MemoryStore();
 
     const first = fakeParsed(["முதல்", "இரண்டாம்"]);
@@ -112,10 +111,11 @@ describe("publishBook", () => {
     expect(result.changed).toBe(true);
     expect(result.contentVersion).toBe(2);
 
-    const count = await db.get<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM chapters WHERE book_id = 'testbook'",
-    );
-    expect(count?.n).toBe(3);
+    const count = await db
+      .select({ idx: chapters.idx })
+      .from(chapters)
+      .where(eq(chapters.bookId, "testbook"));
+    expect(count.length).toBe(3);
   });
 });
 

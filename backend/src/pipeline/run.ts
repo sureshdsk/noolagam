@@ -1,4 +1,6 @@
-import type { Db } from "../db/types.js";
+import { eq } from "drizzle-orm";
+import type { OrmDb } from "../db/index.js";
+import { chapters } from "../db/tables.js";
 import type { ObjectStore } from "../storage/types.js";
 import { parseEpub, type ParsedEpub } from "../epub/parse.js";
 import { buildArtifacts } from "./artifacts.js";
@@ -34,7 +36,7 @@ export function summariesKey(bookId: string): string {
 }
 
 export async function runSummariesJob(
-  db: Db,
+  db: OrmDb,
   store: ObjectStore,
   llm: LlmConfig | null,
   bookId: string,
@@ -42,18 +44,19 @@ export async function runSummariesJob(
   if (!llm) {
     throw new Error("LLM not configured (set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL)");
   }
-  const chapterRows = await db.all<{ idx: number; title: string; content_key: string }>(
-    "SELECT idx, title, content_key FROM chapters WHERE book_id = ? ORDER BY idx",
-    [bookId],
-  );
+  const chapterRows = await db
+    .select({ idx: chapters.idx, title: chapters.title, contentKey: chapters.contentKey })
+    .from(chapters)
+    .where(eq(chapters.bookId, bookId))
+    .orderBy(chapters.idx);
   if (chapterRows.length === 0) {
     throw new Error(`book '${bookId}' has no published chapters`);
   }
 
   const inputs = [];
   for (const row of chapterRows) {
-    const bytes = row.content_key ? await store.get(row.content_key) : null;
-    if (!bytes) throw new Error(`missing chapter artifact: ${row.content_key}`);
+    const bytes = row.contentKey ? await store.get(row.contentKey) : null;
+    if (!bytes) throw new Error(`missing chapter artifact: ${row.contentKey}`);
     const chapter = JSON.parse(new TextDecoder().decode(bytes)) as {
       title: string;
       blocks: { t: string; [key: string]: unknown }[];
@@ -73,7 +76,7 @@ export async function runSummariesJob(
 }
 
 export async function processEpubBook(
-  db: Db,
+  db: OrmDb,
   store: ObjectStore,
   bytes: Uint8Array,
   bookId: string,

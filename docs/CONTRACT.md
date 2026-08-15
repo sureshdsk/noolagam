@@ -13,7 +13,8 @@ Node/Bun for local dev and any container host).
 - `src/nlp/` — Tamil normalization, tokenization, sentence split, search index
 - `src/pipeline/` — stages: `ingest → fix → emit → [llm] → [audio] → publish`
 - `src/storage/` — S3-compatible client (fetch + SigV4) + filesystem adapter (dev)
-- `src/db/` — SQLite-dialect access (D1 in prod, any SQLite locally)
+- `src/db/` — Drizzle ORM (typed queries; sqlite-proxy over node:sqlite
+  locally, drizzle-orm/d1 in the worker). schema.sql stays the DDL source
 - `src/http/` — REST `/v1` routes
 - `src/llm/` — optional OpenAI-compatible client; stages no-op when unconfigured
 

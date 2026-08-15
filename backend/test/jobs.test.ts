@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDb } from "../src/node/sqlite.js";
-import { migrate } from "../src/db/migrate.js";
+import { eq } from "drizzle-orm";
 import { createApp } from "../src/http/app.js";
+import { books, chapters } from "../src/db/tables.js";
+import { openDb } from "../src/node/db.js";
+import { migrate } from "../src/db/migrate.js";
 import { MemoryStore } from "../src/storage/memory.js";
 
 const DY_PATH = fileURLToPath(
@@ -19,8 +20,8 @@ class FakePresignStore extends MemoryStore {
 }
 
 async function makeApp(opts: { adminApiKey?: string } = {}) {
-  const db = new NodeSqliteDb(new DatabaseSync(":memory:"));
-  await migrate(db);
+  const { sqlite, db } = openDb(":memory:");
+  await migrate(sqlite);
   const store = new FakePresignStore();
   const app = createApp({
     db: () => db,
@@ -98,10 +99,13 @@ describe.skipIf(!existsSync(DY_PATH))("POST /v1/jobs end-to-end (real epub)", ()
     const chapter = (await chapterRes.json()) as { url: string };
     expect(chapter.url).toContain("books/deiva_yaanai/chapters/1.json");
 
-    const chapters = await db.all<{ content_key: string }>(
-      "SELECT content_key FROM chapters WHERE book_id = 'deiva_yaanai' ORDER BY idx LIMIT 1",
-    );
-    expect(chapters[0]?.content_key).toBe("books/deiva_yaanai/chapters/0.json");
+    const firstChapter = await db
+      .select({ contentKey: chapters.contentKey })
+      .from(chapters)
+      .where(eq(chapters.bookId, "deiva_yaanai"))
+      .orderBy(chapters.idx)
+      .limit(1);
+    expect(firstChapter[0]?.contentKey).toBe("books/deiva_yaanai/chapters/0.json");
   });
 
   it("fails the job with a readable error for invalid epubs", async () => {
@@ -127,14 +131,22 @@ describe.skipIf(!existsSync(DY_PATH))("POST /v1/jobs end-to-end (real epub)", ()
 describe("POST /v1/jobs (generate_summaries)", () => {
   async function seededApp(opts: { adminApiKey?: string } = {}) {
     const { app, db } = await makeApp(opts);
-    await db.run(
-      `INSERT INTO books (id, title, language, total_chapters, content_version, status)
-       VALUES ('b1', 'நூல்', 'ta', 1, 1, 'published')`,
-    );
-    await db.run(
-      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
-       VALUES ('b1:0', 'b1', 0, 'முதல்', 10, 'books/b1/chapters/0.json')`,
-    );
+    await db.insert(books).values({
+      id: "b1",
+      title: "நூல்",
+      language: "ta",
+      totalChapters: 1,
+      contentVersion: 1,
+      status: "published",
+    });
+    await db.insert(chapters).values({
+      id: "b1:0",
+      bookId: "b1",
+      idx: 0,
+      title: "முதல்",
+      wordCount: 10,
+      contentKey: "books/b1/chapters/0.json",
+    });
     return { app, db };
   }
 

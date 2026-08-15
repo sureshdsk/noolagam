@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { chatCompletion, LlmError, llmConfigFromEnv, type LlmConfig } from "../src/llm/client.js";
 import { generateBookSummaries } from "../src/llm/summaries.js";
 import { runSummariesJob, summariesKey } from "../src/pipeline/run.js";
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDb } from "../src/node/sqlite.js";
+import type { OrmDb } from "../src/db/index.js";
+import { books, chapters } from "../src/db/tables.js";
+import { openDb } from "../src/node/db.js";
 import { migrate } from "../src/db/migrate.js";
 import { MemoryStore } from "../src/storage/memory.js";
 
@@ -116,18 +118,31 @@ describe("generateBookSummaries", () => {
 });
 
 describe("runSummariesJob", () => {
+  async function seededDb(): Promise<OrmDb> {
+    const { sqlite, db } = openDb(":memory:");
+    await migrate(sqlite);
+    await db.insert(books).values({
+      id: "b1",
+      title: "நூல்",
+      language: "ta",
+      totalChapters: 1,
+      contentVersion: 1,
+      status: "published",
+    });
+    await db.insert(chapters).values({
+      id: "b1:0",
+      bookId: "b1",
+      idx: 0,
+      title: "முதல்",
+      wordCount: 10,
+      contentKey: "books/b1/chapters/0.json",
+    });
+    return db;
+  }
+
   it("fails cleanly when LLM is not configured", async () => {
-    const db = new NodeSqliteDb(new DatabaseSync(":memory:"));
-    await migrate(db);
+    const db = await seededDb();
     const store = new MemoryStore();
-    await db.run(
-      `INSERT INTO books (id, title, language, total_chapters, content_version, status)
-       VALUES ('b1', 'நூல்', 'ta', 1, 1, 'published')`,
-    );
-    await db.run(
-      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
-       VALUES ('b1:0', 'b1', 0, 'முதல்', 10, 'books/b1/chapters/0.json')`,
-    );
     await store.put(
       "books/b1/chapters/0.json",
       JSON.stringify({ title: "முதல்", blocks: [{ t: "p", text: "உரை." }] }),
@@ -140,17 +155,8 @@ describe("runSummariesJob", () => {
   });
 
   it("writes summaries.json and updates books.summary", async () => {
-    const db = new NodeSqliteDb(new DatabaseSync(":memory:"));
-    await migrate(db);
+    const db = await seededDb();
     const store = new MemoryStore();
-    await db.run(
-      `INSERT INTO books (id, title, language, total_chapters, content_version, status)
-       VALUES ('b1', 'நூல்', 'ta', 1, 1, 'published')`,
-    );
-    await db.run(
-      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
-       VALUES ('b1:0', 'b1', 0, 'முதல்', 10, 'books/b1/chapters/0.json')`,
-    );
     await store.put(
       "books/b1/chapters/0.json",
       JSON.stringify({
@@ -188,9 +194,11 @@ describe("runSummariesJob", () => {
     expect(summaries.chapterSummaries[0]?.summary).toBe("சுருக்கம்");
     expect(summaries.bookSummary).toBe("சுருக்கம்");
 
-    const book = await db.get<{ summary: string | null }>(
-      "SELECT summary FROM books WHERE id = 'b1'",
-    );
+    const book = await db
+      .select({ summary: books.summary })
+      .from(books)
+      .where(eq(books.id, "b1"))
+      .get();
     expect(book?.summary).toBe("சுருக்கம்");
   });
 });

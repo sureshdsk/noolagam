@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Db } from "../db/types.js";
+import type { OrmDb } from "../db/index.js";
 import type { ObjectStore } from "../storage/types.js";
 import type { LlmConfig } from "../llm/client.js";
 import { bookRoutes } from "./routes/books.js";
@@ -9,7 +9,7 @@ import type { AuthDeps } from "./guards.js";
 import { problem } from "./problems.js";
 
 export interface AppDeps {
-  db: () => Db;
+  db: () => OrmDb;
   store: () => ObjectStore;
   auth: () => AuthDeps;
   adminApiKey: () => string | undefined;

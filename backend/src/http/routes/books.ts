@@ -1,30 +1,11 @@
 import { Hono } from "hono";
-import type { Db } from "../../db/types.js";
+import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm";
+import type { OrmDb } from "../../db/index.js";
+import { books, chapters } from "../../db/tables.js";
+import type { Book, Chapter } from "../../db/tables.js";
 import { badRequest, notFoundBook } from "../guards.js";
 
-export interface BookRow {
-  id: string;
-  title: string;
-  author: string | null;
-  summary: string | null;
-  language: string;
-  total_chapters: number;
-  has_audio: number;
-  a11y_score: number | null;
-  content_version: number;
-  status: string;
-  published_at: string | null;
-}
-
-export interface ChapterRow {
-  idx: number;
-  title: string;
-  word_count: number;
-  audio_key: string | null;
-  duration_secs: number | null;
-}
-
-interface BookListQuery {
+export interface BookListQuery {
   q?: string;
   category?: string;
   page?: string;
@@ -35,22 +16,36 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-function serializeBook(row: BookRow) {
+function likeEscape(column: SQL, pattern: string): SQL {
+  return sql`(${column} like ${pattern} escape '\\')`;
+}
+
+function serializeBook(row: Book) {
   return {
     id: row.id,
     title: row.title,
     author: row.author,
     summary: row.summary,
     language: row.language,
-    total_chapters: row.total_chapters,
-    has_audio: row.has_audio === 1,
-    a11y_score: row.a11y_score,
-    content_version: row.content_version,
-    published_at: row.published_at,
+    total_chapters: row.totalChapters,
+    has_audio: row.hasAudio === 1,
+    a11y_score: row.a11yScore,
+    content_version: row.contentVersion,
+    published_at: row.publishedAt,
   };
 }
 
-export function bookRoutes(db: () => Db): Hono {
+function serializeChapter(row: Pick<Chapter, "idx" | "title" | "wordCount" | "audioKey" | "durationSecs">) {
+  return {
+    idx: row.idx,
+    title: row.title,
+    word_count: row.wordCount,
+    audio_available: row.audioKey !== null,
+    duration_secs: row.durationSecs,
+  };
+}
+
+export function bookRoutes(db: () => OrmDb): Hono {
   const app = new Hono();
 
   app.get("/", async (c) => {
@@ -60,30 +55,36 @@ export function bookRoutes(db: () => Db): Hono {
     const limit = Math.min(100, Math.max(1, rawLimit));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ["status = 'published'"];
-    const params: unknown[] = [];
+    const conditions: SQL[] = [eq(books.status, "published")];
 
     if (query.q && query.q.trim().length > 0) {
-      conditions.push("(title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\')");
       const pattern = `%${escapeLike(query.q.trim())}%`;
-      params.push(pattern, pattern);
+      conditions.push(
+        or(
+          likeEscape(sql`${books.title}`, pattern),
+          likeEscape(sql`${books.author}`, pattern),
+        )!,
+      );
     }
     if (query.category && /^\d+$/.test(query.category)) {
-      conditions.push("id IN (SELECT book_id FROM book_categories WHERE category_id = ?)");
-      params.push(Number(query.category));
+      conditions.push(
+        sql`${books.id} in (select book_id from book_categories where category_id = ${Number(query.category)})`,
+      );
     }
+    const where = and(...conditions);
 
-    const where = conditions.join(" AND ");
-    const totalRow = await db().get<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM books WHERE ${where}`,
-      params,
-    );
-    const rows = await db().all<BookRow>(
-      `SELECT id, title, author, summary, language, total_chapters, has_audio,
-              a11y_score, content_version, status, published_at
-       FROM books WHERE ${where} ORDER BY published_at DESC, id LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
-    );
+    const totalRow = await db()
+      .select({ total: sql<number>`count(*)`.mapWith(Number) })
+      .from(books)
+      .where(where)
+      .get();
+    const rows = await db()
+      .select()
+      .from(books)
+      .where(where)
+      .orderBy(desc(books.publishedAt), books.id)
+      .limit(limit)
+      .offset(offset);
 
     return c.json({
       items: rows.map(serializeBook),
@@ -95,52 +96,41 @@ export function bookRoutes(db: () => Db): Hono {
 
   app.get("/:bookId", async (c) => {
     const bookId = c.req.param("bookId");
-    const book = await db().get<BookRow>(
-      `SELECT id, title, author, summary, language, total_chapters, has_audio,
-              a11y_score, content_version, status, published_at
-       FROM books WHERE id = ? AND status = 'published'`,
-      [bookId],
-    );
+    const book = await db()
+      .select()
+      .from(books)
+      .where(and(eq(books.id, bookId), eq(books.status, "published")))
+      .get();
     if (!book) return notFoundBook(c, bookId);
 
-    const chapters = await db().all<ChapterRow>(
-      "SELECT idx, title, word_count, audio_key, duration_secs FROM chapters WHERE book_id = ? ORDER BY idx",
-      [bookId],
-    );
+    const chapterRows = await db()
+      .select()
+      .from(chapters)
+      .where(eq(chapters.bookId, bookId))
+      .orderBy(asc(chapters.idx));
 
     return c.json({
       ...serializeBook(book),
-      chapters: chapters.map((ch) => ({
-        idx: ch.idx,
-        title: ch.title,
-        word_count: ch.word_count,
-        audio_available: ch.audio_key !== null,
-        duration_secs: ch.duration_secs,
-      })),
+      chapters: chapterRows.map(serializeChapter),
     });
   });
 
   app.get("/:bookId/chapters", async (c) => {
     const bookId = c.req.param("bookId");
-    const book = await db().get<{ id: string }>(
-      "SELECT id FROM books WHERE id = ? AND status = 'published'",
-      [bookId],
-    );
+    const book = await db()
+      .select({ id: books.id })
+      .from(books)
+      .where(and(eq(books.id, bookId), eq(books.status, "published")))
+      .get();
     if (!book) return notFoundBook(c, bookId);
 
-    const chapters = await db().all<ChapterRow>(
-      "SELECT idx, title, word_count, audio_key, duration_secs FROM chapters WHERE book_id = ? ORDER BY idx",
-      [bookId],
-    );
-    return c.json({
-      items: chapters.map((ch) => ({
-        idx: ch.idx,
-        title: ch.title,
-        word_count: ch.word_count,
-        audio_available: ch.audio_key !== null,
-        duration_secs: ch.duration_secs,
-      })),
-    });
+    const chapterRows = await db()
+      .select()
+      .from(chapters)
+      .where(eq(chapters.bookId, bookId))
+      .orderBy(asc(chapters.idx));
+
+    return c.json({ items: chapterRows.map(serializeChapter) });
   });
 
   app.notFound((c) => badRequest(c, "Unknown books route"));

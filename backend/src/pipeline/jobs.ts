@@ -1,15 +1,7 @@
-import type { Db } from "../db/types.js";
-
-export interface JobRow {
-  id: string;
-  book_id: string | null;
-  type: string;
-  status: string;
-  error: string | null;
-  lease_expires_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
+import { and, desc, eq, isNotNull, lt, or } from "drizzle-orm";
+import type { OrmDb } from "../db/index.js";
+import { jobs } from "../db/tables.js";
+import type { Job } from "../db/tables.js";
 
 export const JOB_TYPES = ["process_epub", "generate_summaries"] as const;
 export type JobType = (typeof JOB_TYPES)[number];
@@ -25,86 +17,105 @@ function newId(): string {
 }
 
 export async function createJob(
-  db: Db,
+  db: OrmDb,
   input: { bookId: string | null; type: JobType },
-): Promise<JobRow> {
+): Promise<Job> {
   const id = newId();
   const now = new Date().toISOString();
-  const leaseExpiry = new Date(Date.now() + LEASE_MINUTES * 60_000).toISOString();
-  await db.run(
-    `INSERT INTO jobs (id, book_id, type, status, error, lease_expires_at, created_at, updated_at)
-     VALUES (?, ?, ?, 'pending', NULL, ?, ?, ?)`,
-    [id, input.bookId, input.type, leaseExpiry, now, now],
-  );
-  return (await getJob(db, id))!;
+  const leaseExpiresAt = new Date(Date.now() + LEASE_MINUTES * 60_000).toISOString();
+  const [row] = await db
+    .insert(jobs)
+    .values({
+      id,
+      bookId: input.bookId,
+      type: input.type,
+      status: "pending",
+      error: null,
+      leaseExpiresAt,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  return row!;
 }
 
-export async function getJob(db: Db, id: string): Promise<JobRow | null> {
-  return db.get<JobRow>(
-    "SELECT id, book_id, type, status, error, lease_expires_at, created_at, updated_at FROM jobs WHERE id = ?",
-    [id],
-  );
+export async function getJob(db: OrmDb, id: string): Promise<Job | null> {
+  return (await db.select().from(jobs).where(eq(jobs.id, id)).get()) ?? null;
 }
 
-export async function listJobs(db: Db, status?: string): Promise<JobRow[]> {
-  if (status) {
-    return db.all<JobRow>(
-      "SELECT id, book_id, type, status, error, lease_expires_at, created_at, updated_at FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT 100",
-      [status],
-    );
-  }
-  return db.all<JobRow>(
-    "SELECT id, book_id, type, status, error, lease_expires_at, created_at, updated_at FROM jobs ORDER BY created_at DESC LIMIT 100",
-  );
+export async function listJobs(db: OrmDb, status?: string): Promise<Job[]> {
+  const query = db.select().from(jobs);
+  const rows = status
+    ? await query.where(eq(jobs.status, status)).orderBy(desc(jobs.createdAt)).limit(100)
+    : await query.orderBy(desc(jobs.createdAt)).limit(100);
+  return rows;
 }
 
-export async function claimJob(db: Db, id: string): Promise<boolean> {
+export async function claimJob(db: OrmDb, id: string): Promise<boolean> {
   const now = new Date().toISOString();
   const leaseExpiry = new Date(Date.now() + LEASE_MINUTES * 60_000).toISOString();
   const job = await getJob(db, id);
   if (!job) return false;
-  if (job.status !== "pending" && !(job.status === "running" && job.lease_expires_at !== null && job.lease_expires_at < now)) {
-    return false;
-  }
-  await db.run(
-    "UPDATE jobs SET status = 'running', lease_expires_at = ?, updated_at = ? WHERE id = ?",
-    [leaseExpiry, now, id],
-  );
+  const expired =
+    job.status === "running" &&
+    job.leaseExpiresAt !== null &&
+    job.leaseExpiresAt < now;
+  if (job.status !== "pending" && !expired) return false;
+  await db
+    .update(jobs)
+    .set({ status: "running", leaseExpiresAt: leaseExpiry, updatedAt: now })
+    .where(eq(jobs.id, id));
   return true;
 }
 
-export async function completeJob(db: Db, id: string): Promise<void> {
+export async function completeJob(db: OrmDb, id: string): Promise<void> {
   const now = new Date().toISOString();
-  await db.run(
-    "UPDATE jobs SET status = 'completed', error = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?",
-    [now, id],
-  );
+  await db
+    .update(jobs)
+    .set({ status: "completed", error: null, leaseExpiresAt: null, updatedAt: now })
+    .where(eq(jobs.id, id));
 }
 
-export async function failJob(db: Db, id: string, error: string): Promise<void> {
+export async function failJob(db: OrmDb, id: string, error: string): Promise<void> {
   const now = new Date().toISOString();
-  await db.run(
-    "UPDATE jobs SET status = 'failed', error = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ?",
-    [error.slice(0, 1000), now, id],
-  );
+  await db
+    .update(jobs)
+    .set({
+      status: "failed",
+      error: error.slice(0, 1000),
+      leaseExpiresAt: null,
+      updatedAt: now,
+    })
+    .where(eq(jobs.id, id));
 }
 
-export async function dueJobs(db: Db): Promise<JobRow[]> {
+export async function dueJobs(db: OrmDb): Promise<Job[]> {
   const now = new Date().toISOString();
-  return db.all<JobRow>(
-    "SELECT id, book_id, type, status, error, lease_expires_at, created_at, updated_at FROM jobs WHERE status = 'pending' OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?) ORDER BY created_at LIMIT 5",
-    [now],
-  );
+  return db
+    .select()
+    .from(jobs)
+    .where(
+      or(
+        eq(jobs.status, "pending"),
+        and(
+          eq(jobs.status, "running"),
+          isNotNull(jobs.leaseExpiresAt),
+          lt(jobs.leaseExpiresAt, now),
+        ),
+      ),
+    )
+    .orderBy(jobs.createdAt)
+    .limit(5);
 }
 
-export function serializeJob(job: JobRow) {
+export function serializeJob(job: Job) {
   return {
     id: job.id,
-    book_id: job.book_id,
+    book_id: job.bookId,
     type: job.type,
     status: job.status,
     error: job.error,
-    created_at: job.created_at,
-    updated_at: job.updated_at,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt,
   };
 }

@@ -12,6 +12,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "fflate": "^0.8.2",
     "hono": "^4.6.0",
     "linkedom": "^0.18.9"

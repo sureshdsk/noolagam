@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { Db } from "../../db/types.js";
+import { eq } from "drizzle-orm";
+import type { OrmDb } from "../../db/index.js";
+import { books } from "../../db/tables.js";
 import type { ObjectStore } from "../../storage/types.js";
 import type { LlmConfig } from "../../llm/client.js";
 import {
@@ -24,7 +26,7 @@ import {
 import { problem } from "../problems.js";
 
 export interface JobsDeps {
-  db: () => Db;
+  db: () => OrmDb;
   store: () => ObjectStore;
   adminApiKey: () => string | undefined;
   llm: () => LlmConfig | null;
@@ -39,7 +41,7 @@ async function defer(c: Context, work: Promise<void>): Promise<void> {
 }
 
 async function executeJob(
-  db: Db,
+  db: OrmDb,
   store: ObjectStore,
   jobId: string,
   bytes: Uint8Array | null,
@@ -49,8 +51,8 @@ async function executeJob(
   if (!claimed) return;
   try {
     const job = await getJob(db, jobId);
-    const bookId = job?.book_id;
-    if (!bookId) throw new Error("job has no book_id");
+    const bookId = job?.bookId;
+    if (!bookId) throw new Error("job has no bookId");
     if (job.type === "generate_summaries") {
       await runSummariesJob(db, store, llm(), bookId);
     } else {
@@ -90,7 +92,10 @@ export function jobsRoutes(deps: JobsDeps): Hono {
       }
       const book = await deps
         .db()
-        .get<{ id: string }>("SELECT id FROM books WHERE id = ?", [body.book_id]);
+        .select({ id: books.id })
+        .from(books)
+        .where(eq(books.id, body.book_id))
+        .get();
       if (!book) {
         return problem(c, 404, {
           type: "book_not_found",
@@ -101,7 +106,7 @@ export function jobsRoutes(deps: JobsDeps): Hono {
       const job = await createJob(deps.db(), { bookId: body.book_id, type: "generate_summaries" });
       await defer(c, executeJob(deps.db(), deps.store(), job.id, null, deps.llm));
       return c.body(
-        JSON.stringify({ id: job.id, book_id: job.book_id, status: job.status }),
+        JSON.stringify({ id: job.id, book_id: job.bookId, status: job.status }),
         202,
         { "content-type": "application/json", location: `/v1/jobs/${job.id}` },
       );
@@ -134,7 +139,7 @@ export function jobsRoutes(deps: JobsDeps): Hono {
     await defer(c, executeJob(deps.db(), store, job.id, bytes, deps.llm));
 
     return c.body(
-      JSON.stringify({ id: job.id, book_id: job.book_id, status: job.status }),
+      JSON.stringify({ id: job.id, book_id: job.bookId, status: job.status }),
       202,
       { "content-type": "application/json", location: `/v1/jobs/${job.id}` },
     );

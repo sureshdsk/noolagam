@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDb } from "../src/node/sqlite.js";
-import { migrate } from "../src/db/migrate.js";
+import { eq } from "drizzle-orm";
 import { createApp } from "../src/http/app.js";
+import type { OrmDb } from "../src/db/index.js";
+import { books, chapters } from "../src/db/tables.js";
+import { openDb } from "../src/node/db.js";
+import { migrate } from "../src/db/migrate.js";
 import { MemoryStore } from "../src/storage/memory.js";
 import type { ObjectStore } from "../src/storage/types.js";
 import type { AuthDeps } from "../src/http/guards.js";
@@ -51,32 +53,49 @@ class FakePresignStore extends MemoryStore {
   }
 }
 
-async function seed(): Promise<NodeSqliteDb> {
-  const db = new NodeSqliteDb(new DatabaseSync(":memory:"));
-  await migrate(db);
-  await db.run(
-    `INSERT INTO books (id, title, author, language, cover_key, manifest_key, total_chapters,
-                        has_audio, a11y_score, content_version, status, published_at)
-     VALUES ('testbook', 'சோதனை நூல்', 'ஆசிரியர்', 'ta', 'books/testbook/cover.jpg',
-             'books/testbook/manifest.json', 2, 0, 90, 1, 'published', '2026-01-01T00:00:00Z')`,
-  );
-  await db.run(
-    `INSERT INTO books (id, title, author, language, total_chapters, has_audio, a11y_score,
-                        content_version, status)
-     VALUES ('draft', 'வரைவு', NULL, 'ta', 1, 0, NULL, 1, 'processing')`,
-  );
-  for (const [idx, title] of [["0", "முதல்"], ["1", "இரண்டாம்"]]) {
-    await db.run(
-      `INSERT INTO chapters (id, book_id, idx, title, word_count, content_key)
-       VALUES (?, 'testbook', ?, ?, 100, ?)`,
-      [`testbook:${idx}`, idx, title, `books/testbook/chapters/${idx}.json`],
-    );
+async function seed(): Promise<OrmDb> {
+  const { sqlite, db } = openDb(":memory:");
+  await migrate(sqlite);
+  await db.insert(books).values([
+    {
+      id: "testbook",
+      title: "சோதனை நூல்",
+      author: "ஆசிரியர்",
+      language: "ta",
+      coverKey: "books/testbook/cover.jpg",
+      manifestKey: "books/testbook/manifest.json",
+      totalChapters: 2,
+      hasAudio: 0,
+      a11yScore: 90,
+      contentVersion: 1,
+      status: "published",
+      publishedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      id: "draft",
+      title: "வரைவு",
+      language: "ta",
+      totalChapters: 1,
+      hasAudio: 0,
+      contentVersion: 1,
+      status: "processing",
+    },
+  ]);
+  for (const [idx, title] of [["0", "முதல்"], ["1", "இரண்டாம்"]] as const) {
+    await db.insert(chapters).values({
+      id: `testbook:${idx}`,
+      bookId: "testbook",
+      idx: Number(idx),
+      title,
+      wordCount: 100,
+      contentKey: `books/testbook/chapters/${idx}.json`,
+    });
   }
   return db;
 }
 
 function makeApp(
-  db: NodeSqliteDb,
+  db: OrmDb,
   opts: { enforce?: boolean; store?: ObjectStore; adminApiKey?: string } = {},
 ) {
   const store = opts.store ?? new FakePresignStore();
@@ -223,7 +242,7 @@ describe("cover route", () => {
 
   it("404s when book has no cover", async () => {
     const db = await seed();
-    await db.run("UPDATE books SET cover_key = NULL WHERE id = 'testbook'");
+    await db.update(books).set({ coverKey: null }).where(eq(books.id, "testbook"));
     const app = makeApp(db);
     const res = await app.request("/v1/books/testbook/cover");
     expect(res.status).toBe(404);

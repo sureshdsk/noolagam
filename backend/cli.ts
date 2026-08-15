@@ -3,8 +3,9 @@ import { dirname, join, resolve } from "node:path";
 import { parseEpub, type ParsedEpub } from "./src/epub/parse.js";
 import { processEpubBook, summariesKey } from "./src/pipeline/run.js";
 import { migrate } from "./src/db/migrate.js";
+import { books } from "./src/db/tables.js";
 import { FsStore } from "./src/node/fs-store.js";
-import { openSqliteDb } from "./src/node/sqlite.js";
+import { openDb } from "./src/node/db.js";
 import { S3Store, s3ConfigFromEnv } from "./src/storage/s3.js";
 import type { ObjectStore } from "./src/storage/types.js";
 import { slugifyBookId } from "./src/util/slug.js";
@@ -91,24 +92,26 @@ async function run(): Promise<void> {
 
   if (args.command === "books") {
     const dbPath = args.db ?? join(args.out, "catalog.db");
-    const db = openSqliteDb(dbPath);
-    const rows = await db.all<{
-      id: string;
-      title: string;
-      total_chapters: number;
-      content_version: number;
-      status: string;
-      a11y_score: number | null;
-    }>(
-      "SELECT id, title, total_chapters, content_version, status, a11y_score FROM books ORDER BY id",
-    );
+    const { sqlite, db } = openDb(dbPath);
+    void sqlite;
+    const rows = await db
+      .select({
+        id: books.id,
+        title: books.title,
+        totalChapters: books.totalChapters,
+        contentVersion: books.contentVersion,
+        status: books.status,
+        a11yScore: books.a11yScore,
+      })
+      .from(books)
+      .orderBy(books.id);
     if (rows.length === 0) {
       console.log(`no books in ${dbPath}`);
       return;
     }
     for (const row of rows) {
       console.log(
-        `${row.id}  v${row.content_version}  ${row.status}  ${row.total_chapters} ch  a11y=${row.a11y_score}  ${row.title}`,
+        `${row.id}  v${row.contentVersion}  ${row.status}  ${row.totalChapters} ch  a11y=${row.a11yScore}  ${row.title}`,
       );
     }
     return;
@@ -167,8 +170,8 @@ async function run(): Promise<void> {
   const { store, label } = await makeStore(args.out);
   const dbPath = args.db ?? join(args.out, "catalog.db");
   await mkdir(dirname(resolve(dbPath)), { recursive: true });
-  const db = openSqliteDb(dbPath);
-  await migrate(db);
+  const { sqlite, db } = openDb(dbPath);
+  await migrate(sqlite);
 
   console.log(`store: ${label}\ndb:    ${resolve(dbPath)}`);
   for (const epub of args.epubs) {

@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { Db } from "../../db/types.js";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
+import type { OrmDb } from "../../db/index.js";
+import { books, chapters } from "../../db/tables.js";
 import type { ObjectStore } from "../../storage/types.js";
 import {
   authenticate,
@@ -13,17 +15,6 @@ import {
 import { FixedWindowRateLimiter } from "../ratelimit.js";
 
 const PRESIGN_TTL_SECONDS = 15 * 60;
-
-interface ChapterRow {
-  idx: number;
-  content_key: string | null;
-  audio_key?: string | null;
-}
-
-interface BookKeysRow {
-  cover_key: string | null;
-  has_audio: number;
-}
 
 const coverLimiter = new FixedWindowRateLimiter(60);
 
@@ -42,15 +33,8 @@ async function presign(
   }
 }
 
-async function publishedBook(db: Db, bookId: string): Promise<BookKeysRow | null> {
-  return db.get<BookKeysRow>(
-    "SELECT cover_key, has_audio FROM books WHERE id = ? AND status = 'published'",
-    [bookId],
-  );
-}
-
 export function contentRoutes(
-  db: () => Db,
+  db: () => OrmDb,
   store: () => ObjectStore,
   auth: () => AuthDeps,
 ): Hono {
@@ -65,16 +49,21 @@ export function contentRoutes(
     if (!/^\d+$/.test(idxParam)) return badRequest(c, "Chapter idx must be a non-negative integer");
     const idx = Number(idxParam);
 
-    const book = await publishedBook(db(), bookId);
+    const book = await db()
+      .select({ coverKey: books.coverKey, hasAudio: books.hasAudio })
+      .from(books)
+      .where(and(eq(books.id, bookId), eq(books.status, "published")))
+      .get();
     if (!book) return notFoundBook(c, bookId);
 
-    const chapter = await db().get<ChapterRow>(
-      "SELECT idx, content_key FROM chapters WHERE book_id = ? AND idx = ?",
-      [bookId, idx],
-    );
-    if (!chapter?.content_key) return notFoundChapter(c, bookId, idx);
+    const chapter = await db()
+      .select({ idx: chapters.idx, contentKey: chapters.contentKey })
+      .from(chapters)
+      .where(and(eq(chapters.bookId, bookId), eq(chapters.idx, idx)))
+      .get();
+    if (!chapter?.contentKey) return notFoundChapter(c, bookId, idx);
 
-    const url = await presign(store(), chapter.content_key);
+    const url = await presign(store(), chapter.contentKey);
     if (!url) {
       return c.json(
         { status: 503, type: "presign_unavailable", title: "Storage presigning unavailable" },
@@ -96,36 +85,42 @@ export function contentRoutes(
     const bookId = c.req.param("bookId");
     const types = (c.req.query("type") ?? "chapters,cover").split(",").map((t) => t.trim());
 
-    const book = await publishedBook(db(), bookId);
+    const book = await db()
+      .select({ coverKey: books.coverKey, hasAudio: books.hasAudio })
+      .from(books)
+      .where(and(eq(books.id, bookId), eq(books.status, "published")))
+      .get();
     if (!book) return notFoundBook(c, bookId);
 
     const urls: Record<string, unknown> = {};
     for (const type of types) {
       if (type === "cover") {
-        if (book.cover_key) {
-          const url = await presign(store(), book.cover_key);
+        if (book.coverKey) {
+          const url = await presign(store(), book.coverKey);
           if (url) urls.cover = url;
         }
       } else if (type === "chapters") {
-        const chapters = await db().all<ChapterRow>(
-          "SELECT idx, content_key FROM chapters WHERE book_id = ? ORDER BY idx",
-          [bookId],
-        );
+        const chapterRows = await db()
+          .select({ idx: chapters.idx, contentKey: chapters.contentKey })
+          .from(chapters)
+          .where(eq(chapters.bookId, bookId))
+          .orderBy(asc(chapters.idx));
         const map: Record<string, string> = {};
-        for (const ch of chapters) {
-          const url = ch.content_key ? await presign(store(), ch.content_key) : null;
+        for (const ch of chapterRows) {
+          const url = ch.contentKey ? await presign(store(), ch.contentKey) : null;
           if (url) map[String(ch.idx)] = url;
         }
         urls.chapters = map;
       } else if (type === "audio") {
-        if (book.has_audio !== 1) continue;
-        const chapters = await db().all<ChapterRow>(
-          "SELECT idx, audio_key FROM chapters WHERE book_id = ? AND audio_key IS NOT NULL ORDER BY idx",
-          [bookId],
-        );
+        if (book.hasAudio !== 1) continue;
+        const audioRows = await db()
+          .select({ idx: chapters.idx, audioKey: chapters.audioKey })
+          .from(chapters)
+          .where(and(eq(chapters.bookId, bookId), isNotNull(chapters.audioKey)))
+          .orderBy(asc(chapters.idx));
         const map: Record<string, string> = {};
-        for (const ch of chapters) {
-          const url = await presign(store(), ch.audio_key!);
+        for (const ch of audioRows) {
+          const url = await presign(store(), ch.audioKey!);
           if (url) map[String(ch.idx)] = url;
         }
         urls.audio = map;
@@ -149,9 +144,13 @@ export function contentRoutes(
         429,
       );
     }
-    const book = await publishedBook(db(), bookId);
-    if (!book?.cover_key) return notFoundBook(c, bookId);
-    const url = await presign(store(), book.cover_key);
+    const book = await db()
+      .select({ coverKey: books.coverKey })
+      .from(books)
+      .where(and(eq(books.id, bookId), eq(books.status, "published")))
+      .get();
+    if (!book?.coverKey) return notFoundBook(c, bookId);
+    const url = await presign(store(), book.coverKey);
     if (!url) {
       return c.json(
         { status: 503, type: "presign_unavailable", title: "Storage presigning unavailable" },
