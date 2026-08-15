@@ -67,11 +67,12 @@ Chapter JSON is typed semantic blocks — never raw HTML (see architecture.md):
 | Method & path | Auth | Status |
 |---|---|---|
 | `GET /v1/health` | public | P0 ✅ |
-| `GET /v1/books?q=&category=&page=&limit=` | public | P3 |
-| `GET /v1/books/{bookId}` | public | P3 |
-| `GET /v1/books/{bookId}/chapters` | public | P3 |
-| `GET /v1/books/{bookId}/chapters/{idx}` | user | P3 |
-| `GET /v1/books/{bookId}/assets?type=` | user | P3 |
+| `GET /v1/books?q=&category=&page=&limit=` | public | P3 ✅ |
+| `GET /v1/books/{bookId}` | public | P3 ✅ |
+| `GET /v1/books/{bookId}/chapters` | public | P3 ✅ |
+| `GET /v1/books/{bookId}/chapters/{idx}` | user | P3 ✅ |
+| `GET /v1/books/{bookId}/assets?type=chapters,audio,cover` | user | P3 ✅ |
+| `GET /v1/books/{bookId}/cover` | public, rate-limited, 302 | P3 ✅ |
 | `POST /v1/jobs`, `GET /v1/jobs/{id}` | admin | P4 |
 
 Errors: RFC 7807 `application/problem+json`. Pagination: `?page=&limit=` →
