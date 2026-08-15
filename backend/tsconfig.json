@@ -13,5 +13,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "worker.ts"]
+  "include": ["src", "worker.ts"],
+  "exclude": ["src/node"]
 }

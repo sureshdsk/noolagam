@@ -1,4 +1,4 @@
--- Noolagam relational layer — SQLite dialect (D1 / SQLite file / Postgres-compatible subset).
+export const SCHEMA_SQL = `-- Noolagam relational layer — SQLite dialect (D1 / SQLite file / Postgres-compatible subset).
 -- Mirrors docs/architecture.md §DB schema. Heavy artifacts live in object storage, not here.
 
 CREATE TABLE IF NOT EXISTS users (
@@ -117,4 +117,4 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
 CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id, idx);
 CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);`;
