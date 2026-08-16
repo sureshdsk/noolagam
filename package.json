@@ -1,0 +1,13 @@
+{
+  "name": "noolagam-web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "flutter build web --release",
+    "serve": "serve build/web -l 8080",
+    "start": "npm run build && npm run serve"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}

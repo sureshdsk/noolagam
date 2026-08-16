@@ -1,30 +1,39 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:tamil_ebook_reader/main.dart';
+import 'package:tamil_ebook_reader/app.dart';
+import 'package:tamil_ebook_reader/state/catalog_provider.dart';
+import 'package:tamil_ebook_reader/state/highlights_provider.dart';
+import 'package:tamil_ebook_reader/state/jobs_provider.dart';
+import 'package:tamil_ebook_reader/state/reader_prefs_provider.dart';
+import 'package:tamil_ebook_reader/state/reading_progress_provider.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('app boots to splash screen', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final catalog = CatalogProvider();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => ReaderPrefsProvider(prefs)),
+          ChangeNotifierProvider(create: (_) => ReadingProgressProvider(prefs)),
+          ChangeNotifierProvider(create: (_) => HighlightsProvider(prefs)),
+          ChangeNotifierProvider.value(value: catalog),
+          ChangeNotifierProvider(create: (_) => JobsProvider(prefs)),
+        ],
+        child: const TamilEbookReaderApp(),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('ஓலைச்சுவடி'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Fire the splash delay + navigation transition so no timer stays pending.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('வாசகரே, வணக்கம் 👋'), findsOneWidget);
   });
 }

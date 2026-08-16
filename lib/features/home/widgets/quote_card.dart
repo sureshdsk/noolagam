@@ -9,58 +9,87 @@ class QuoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
       decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
-        ],
+        gradient: AppColors.parchmentGradient,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.softShadow,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Row(
+          Positioned(
+            top: -14,
+            right: -6,
+            child: Icon(
+              Icons.format_quote_rounded,
+              size: 92,
+              color: AppColors.accent.withValues(alpha: 0.16),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.auto_stories_rounded, color: AppColors.button),
-
-              SizedBox(width: 10),
-
-              Text(
-                "இன்றைய பொன்மொழி",
+              Row(
+                children: [
+                  Container(
+                    height: 36,
+                    width: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    "இன்றைய பொன்மொழி",
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                "கற்றது கைமண் அளவு,\nகல்லாதது உலகளவு.",
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
+                  fontSize: 21,
+                  height: 1.6,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
                 ),
               ),
-            ],
-          ),
-
-          SizedBox(height: 20),
-
-          Text(
-            "கற்றது கைமண் அளவு,\nகல்லாதது உலகளவு.",
-            style: TextStyle(
-              fontSize: 22,
-              height: 1.6,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-
-          SizedBox(height: 15),
-
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              "— அவ்வையார்",
-              style: TextStyle(
-                fontSize: 15,
-                fontStyle: FontStyle.italic,
-                color: AppColors.textSecondary,
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.emberGradient,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    "அவ்வையார்",
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
-            ),
+            ],
           ),
         ],
       ),

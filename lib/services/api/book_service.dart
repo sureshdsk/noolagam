@@ -1,34 +1,50 @@
+import '../../core/config.dart';
 import '../../models/book.dart';
-import 'api_service.dart';
+import '../../models/chapter.dart';
+import 'api_client.dart';
 
+/// Client for `/v1/books*` endpoints: catalog, detail, chapter content.
 class BookService {
-  static final ApiService _api = ApiService();
+  BookService({ApiClient? client}) : _client = client ?? ApiClient();
 
-  static Future<List<Book>> getBooks() async {
-    final response = await _api.get('/books');
+  final ApiClient _client;
 
-    return (response as List).map((e) => Book.fromJson(e)).toList();
+  static String coverUrlFor(String bookId) => ApiConfig.coverUrl(bookId);
+
+  /// Lists published books, newest first.
+  Future<BookPage> getBooks({String? q, int page = 1, int limit = 20}) async {
+    final json = await _client.getJson(
+      '/books',
+      query: {
+        if (q != null && q.isNotEmpty) 'q': q,
+        'page': page,
+        'limit': limit,
+      },
+    );
+    return BookPage.fromJson(json);
   }
 
-  static Future<Book> getBook(String id) async {
-    final response = await _api.get('/books/$id');
-
-    return Book.fromJson(response);
+  /// Book detail including the chapter TOC.
+  Future<Book> getBook(String bookId) async {
+    final json = await _client.getJson('/books/$bookId');
+    return Book.fromJson(json);
   }
 
-  static Future<List<Book>> searchBooks(String keyword) async {
-    final response = await _api.get('/books/search?q=$keyword');
-
-    return (response as List).map((e) => Book.fromJson(e)).toList();
-  }
-
-  static Future<void> addToLibrary(String bookId) async {
-    await _api.post('/library/add', {"book_id": bookId});
-  }
-
-  static Future<List<Book>> getContinueReading() async {
-    final response = await _api.get('/library/continue');
-
-    return (response as List).map((e) => Book.fromJson(e)).toList();
+  /// Fetches full chapter content: presign via the API, then download the
+  /// block-model JSON from object storage.
+  Future<ContentChapter> getChapter(String bookId, int idx) async {
+    final presigned = await _client.getJson(
+      '/books/$bookId/chapters/$idx',
+      authenticated: true,
+    );
+    final url = presigned['url']?.toString();
+    if (url == null || url.isEmpty) {
+      throw const ApiException(
+        type: 'presign_unavailable',
+        title: 'அத்தியாய உள்ளடக்கம் கிடைக்கவில்லை',
+      );
+    }
+    final chapterJson = await _client.getAbsoluteJson(url);
+    return ContentChapter.fromJson(chapterJson);
   }
 }

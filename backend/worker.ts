@@ -17,6 +17,7 @@ export interface Env {
   CLERK_ISSUER?: string;
   CLERK_AUDIENCE?: string;
   ADMIN_API_KEY?: string;
+  CORS_ORIGINS?: string;
   MAINTENANCE_SKIP?: string;
   LLM_BASE_URL?: string;
   LLM_API_KEY?: string;
@@ -55,6 +56,7 @@ function handler(env: Env) {
       audience: env.CLERK_AUDIENCE,
     }),
     adminApiKey: () => env.ADMIN_API_KEY,
+    corsOrigins: () => env.CORS_ORIGINS,
     llm,
   });
 }

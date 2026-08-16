@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node / npm (serve for the web build)
+node_modules/
+
+# Sample book content — large binaries, not source
+assets/books/*.epub
+
+# Local environment overrides
+.env
+.env.*
+!.env.example
