@@ -112,16 +112,79 @@ docker exec noolagam-minio mc mb local/noolagam-dev
 
 `backend/.dev.vars` then points `S3_ENDPOINT=http://localhost:9100` (see
 `.env.example`). With MinIO up: apply schema
-(`npx wrangler d1 execute noolagam-catalog --local --file=schema.sql`), submit a
-book (`curl -X POST localhost:8787/v1/jobs -H 'x-admin-key: …' -F
-file=@../assets/books/deiva_yaanai/deiva_yaanai.epub`), then browse `/v1/books`.
+(`npm run db:schema:local`), submit a book (`curl -X POST localhost:8787/v1/jobs
+-H 'x-admin-key: …' -F file=@../assets/books/deiva_yaanai/deiva_yaanai.epub`),
+then browse `/v1/books`.
+
+## Environments
+
+Three wrangler configs, one per environment. Wrangler config has no `extends`, so
+the shared keys are duplicated by hand and `test/config.test.ts` enforces that
+they stay in sync.
+
+| Config | Worker | D1 | R2 |
+| --- | --- | --- | --- |
+| `wrangler.jsonc` (default) | `noolagam-api-local` | miniflare local | MinIO `:9100` via `.dev.vars` |
+| `wrangler.staging.jsonc` | `noolagam-api-staging` | `noolagam-catalog-staging` | `noolagam-content-staging` |
+| `wrangler.production.jsonc` | `noolagam-api` | `noolagam-catalog` | `noolagam-content` |
+
+`wrangler.jsonc` is local-only and is never deployed. There is deliberately no
+bare `deploy` script — every deploy names its config:
+
+```
+npm run deploy:staging    # wrangler deploy -c wrangler.staging.jsonc
+npm run deploy:prod       # wrangler deploy -c wrangler.production.jsonc
+npm run tail:staging      # live logs
+```
 
 ## Deployment notes
 
-- Worker runs the pipeline inline via `waitUntil` (fine for `wrangler dev` and
-  paid Workers; free-tier CPU limits are exceeded by large books — use the CLI,
-  a queue, or Containers there). Cron trigger (`*/5 * * * *`) reclaims
-  stuck/pending jobs via lease expiry.
-- DB: D1 in production (`npx wrangler d1 migrations` / `--file=schema.sql`).
-- Storage: any S3 endpoint (R2: `https://<account>.r2.cloudflarestorage.com`,
-  region `auto`).
+Two properties of `worker.ts` dictate the order of a first deploy:
+
+1. **Missing S3 config is a total outage, not a degraded one.** `handler()` calls
+   `makeStore(env)` before `createApp`, so a Worker without `S3_*` returns 500 on
+   *every* route, `/v1/health` included. Carry the secrets in the first deploy:
+   `wrangler deploy -c <config> --secrets-file <file>` (additive — later deploys
+   do not drop omitted secrets).
+2. **Cron cannot bootstrap the schema.** `migrate()` runs only from `scheduled`,
+   and `scheduled` calls `makeStore` before it — so an unmigrated DB with no S3
+   config never self-heals. Apply `schema.sql` to remote D1 first.
+
+First deploy of an environment:
+
+```
+npx wrangler login                       # interactive; note the Account ID
+npx wrangler d1 create noolagam-catalog  # paste uuid -> database_id in the config
+npx wrangler r2 bucket create noolagam-content
+# R2 -> Overview -> API Tokens -> Create Account API token (Object Read & Write,
+# scoped to the bucket). Wrangler cannot mint S3 API credentials.
+npm run db:schema:prod                   # schema.sql -> remote D1
+npx wrangler deploy -c wrangler.production.jsonc --secrets-file /path/to/secrets.env
+```
+
+Secrets (never `vars`): `ADMIN_API_KEY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
+plus `CLERK_JWKS_URL` / `CLERK_ISSUER` and optionally `LLM_*`. Use a distinct
+`ADMIN_API_KEY` and a distinct R2 token per environment; shred the secrets file
+afterwards.
+
+- `S3_ENDPOINT` is **host only** — `https://<account>.r2.cloudflarestorage.com`,
+  region `auto`, no bucket and no trailing slash. `S3Store.objectUrl` builds
+  `${endpoint}/${bucket}/${key}`; a bucket in the endpoint double-prefixes every
+  key and presigned GETs 404 with nothing wrong at deploy time.
+- Worker runs the pipeline inline via `waitUntil`; `limits.cpu_ms` is raised to
+  the paid maximum for it. That cap does not apply to sub-hourly cron
+  invocations, which stay at 30s — a book that only completes via the cron retry
+  path can still hit `exceededCpu`. Free tier exceeds CPU limits on large books
+  entirely; use the CLI, a queue, or Containers there.
+- Cron (`*/5 * * * *`) runs `migrate()` and reclaims stuck/pending jobs via lease
+  expiry. Never set `MAINTENANCE_SKIP=true` in a deployed environment — it
+  disables both.
+- `AUTH_ENFORCE` is `"false"` in every config today, so content routes are
+  public: `authenticate()` returns a fixed `dev-user` claim. Before flipping it
+  to `"true"`, wire a real `AuthService` in the Flutter app (currently
+  `NoopAuthService`) and add a JWKS cache — `guards.ts` refetches the key set on
+  every authenticated request.
+- Browser (Flutter web) clients need CORS in two places: `CORS_ORIGINS` for the
+  API, and a CORS policy on the R2 bucket, which the client hits directly with
+  presigned URLs. Mobile builds need neither.
+- Rollback: `npx wrangler versions list` / `npx wrangler rollback [VERSION_ID]`.

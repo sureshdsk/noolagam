@@ -1,16 +1,18 @@
 {
-  // Noolagam API worker.
-  // Storage: S3-compatible (R2/S3/MinIO/B2) via S3_* vars or secrets — no vendor binding.
-  // DB: D1 binding (SQLite dialect; swap to any SQL adapter elsewhere).
-  "name": "noolagam-api",
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // LOCAL DEV ONLY — drives `wrangler dev`. Never deployed.
+  //
+  // D1 is miniflare's local SQLite (database_id is required but unused locally).
+  // S3_* and secrets come from .dev.vars (MinIO on :9100) — see .env.example.
+  // Deployed environments live in wrangler.staging.jsonc / wrangler.production.jsonc.
+  "name": "noolagam-api-local",
   "main": "worker.ts",
   "compatibility_date": "2026-08-01",
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "noolagam-catalog",
-      "database_id": "local-dev",
-      "migrations_dir": "migrations"
+      "database_name": "noolagam-catalog-local",
+      "database_id": "local-dev"
     }
   ],
   "vars": {

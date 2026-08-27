@@ -1,0 +1,34 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // STAGING — deploy with `npm run deploy:staging`.
+  //
+  // Before the first deploy:
+  //   1. npx wrangler d1 create noolagam-catalog-staging  -> paste uuid into database_id
+  //   2. npx wrangler whoami                              -> paste account id into S3_ENDPOINT
+  //   3. npx wrangler r2 bucket create noolagam-content-staging
+  //   4. npm run db:schema:staging                        -> apply schema.sql to remote D1
+  // The worker 500s on EVERY route (health included) until the S3_* secrets exist,
+  // so the first deploy must carry them via --secrets-file. See docs/CONTRACT.md.
+  "name": "noolagam-api-staging",
+  "main": "worker.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  "limits": { "cpu_ms": 300000 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "noolagam-catalog-staging",
+      "database_id": "bc19b3dd-52f3-4c8a-a79a-fc59bcf4f63d"
+    }
+  ],
+  "vars": {
+    "AUTH_ENFORCE": "false",
+    "S3_REGION": "auto",
+    // Host only — no bucket, no trailing slash. s3.ts builds ${endpoint}/${bucket}/${key}.
+    "S3_ENDPOINT": "https://b6d773c2a1692fb489e97fbbc13e341c.r2.cloudflarestorage.com",
+    "S3_BUCKET": "noolagam-content-staging"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+}
