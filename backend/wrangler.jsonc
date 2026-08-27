@@ -1,0 +1,23 @@
+{
+  // Noolagam API worker.
+  // Storage: S3-compatible (R2/S3/MinIO/B2) via S3_* vars or secrets — no vendor binding.
+  // DB: D1 binding (SQLite dialect; swap to any SQL adapter elsewhere).
+  "name": "noolagam-api",
+  "main": "worker.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "noolagam-catalog",
+      "database_id": "local-dev",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "AUTH_ENFORCE": "false",
+    "S3_REGION": "auto"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+}
