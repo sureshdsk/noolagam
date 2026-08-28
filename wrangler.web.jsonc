@@ -1,0 +1,19 @@
+{
+  "$schema": "./backend/node_modules/wrangler/config-schema.json",
+  // FLUTTER WEB — deploy with `npm run deploy:web`.
+  //
+  // Assets-only Worker (no `main`): wrangler uploads ./build/web and serves it.
+  // `single-page-application` returns index.html for unmatched paths so the
+  // Flutter router survives deep links and hard refreshes.
+  //
+  // The API base URL is baked in at build time via --dart-define (see the
+  // build:staging script) because lib/core/config.dart otherwise falls back to
+  // http://localhost:8787/v1 on web.
+  "name": "noolagam-web",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./build/web",
+    "not_found_handling": "single-page-application"
+  }
+}

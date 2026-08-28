@@ -23,6 +23,11 @@
   ],
   "vars": {
     "AUTH_ENFORCE": "false",
+    // Staging is a permissive test surface: content routes are public
+    // (AUTH_ENFORCE=false), so an origin allowlist gates nothing an attacker
+    // cannot bypass with curl, while it does break version preview URLs,
+    // `flutter run -d chrome` (random port) and any other dev origin.
+    "CORS_ORIGINS": "*",
     "S3_REGION": "auto",
     // Host only — no bucket, no trailing slash. s3.ts builds ${endpoint}/${bucket}/${key}.
     "S3_ENDPOINT": "https://b6d773c2a1692fb489e97fbbc13e341c.r2.cloudflarestorage.com",

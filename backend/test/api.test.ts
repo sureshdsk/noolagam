@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/http/app.js";
 import type { OrmDb } from "../src/db/index.js";
@@ -233,11 +233,34 @@ describe("auth enforcement depends on env", () => {
 });
 
 describe("cover route", () => {
-  it("redirects anonymously to presigned cover", async () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  // The Worker proxies the bytes rather than 302-redirecting: a cross-origin
+  // redirect makes browsers send `Origin: null`, which R2 CORS cannot allow.
+  it("streams the cover bytes anonymously, without redirecting", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("jpegbytes", {
+        status: 200,
+        headers: { "content-type": "image/jpeg", etag: '"abc"' },
+      }),
+    );
     const app = makeApp(await seed());
     const res = await app.request("/v1/books/testbook/cover");
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toContain("cover.jpg");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
+    expect(res.headers.get("etag")).toBe('"abc"');
+    expect(await res.text()).toBe("jpegbytes");
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("cover.jpg");
+  });
+
+  it("502s when the presigned cover fetch fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("nope", { status: 403 }),
+    );
+    const app = makeApp(await seed());
+    const res = await app.request("/v1/books/testbook/cover");
+    expect(res.status).toBe(502);
   });
 
   it("404s when book has no cover", async () => {

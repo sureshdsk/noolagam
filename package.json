@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "build": "flutter build web --release",
+    "build:staging": "flutter build web --release --no-web-resources-cdn --dart-define=API_BASE_URL=https://noolagam-api-staging.sureshdsk.workers.dev/v1",
+    "deploy:web": "npm run build:staging && ./backend/node_modules/.bin/wrangler deploy -c wrangler.web.jsonc",
     "serve": "serve build/web -l 8080",
     "start": "npm run build && npm run serve"
   },

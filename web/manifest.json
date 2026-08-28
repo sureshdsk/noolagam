@@ -1,12 +1,12 @@
 {
-    "name": "tamil_ebook_reader",
-    "short_name": "tamil_ebook_reader",
+    "name": "ஓலைச்சுவடி",
+    "short_name": "ஓலைச்சுவடி",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#FAF5EB",
+    "theme_color": "#B4552D",
+    "description": "Tamil ebook reader with accessible, structured chapter content.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

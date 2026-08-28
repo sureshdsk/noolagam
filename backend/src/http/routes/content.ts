@@ -33,6 +33,34 @@ async function presign(
   }
 }
 
+/**
+ * Streams the cover image through the Worker instead of 302-redirecting the
+ * client to R2.
+ *
+ * A cross-origin redirect makes the browser send `Origin: null` on the
+ * follow-up request (Fetch spec), and R2 rejects `null` as an allowed origin —
+ * so a redirect can never satisfy CORS for a browser client. Proxying keeps the
+ * bucket's CORS policy scoped to real origins.
+ */
+async function streamCover(c: Context, url: string): Promise<Response> {
+  const upstream = await fetch(url);
+  if (!upstream.ok || !upstream.body) {
+    return c.json(
+      { status: 502, type: "cover_unavailable", title: "Cover fetch failed" },
+      502,
+    );
+  }
+  const headers = new Headers({
+    "Content-Type": upstream.headers.get("content-type") ?? "image/jpeg",
+    "Cache-Control": `public, max-age=${PRESIGN_TTL_SECONDS}`,
+  });
+  const length = upstream.headers.get("content-length");
+  if (length) headers.set("Content-Length", length);
+  const etag = upstream.headers.get("etag");
+  if (etag) headers.set("ETag", etag);
+  return new Response(upstream.body, { status: 200, headers });
+}
+
 export function contentRoutes(
   db: () => OrmDb,
   store: () => ObjectStore,
@@ -157,7 +185,7 @@ export function contentRoutes(
         503,
       );
     }
-    return c.redirect(url, 302);
+    return streamCover(c, url);
   });
 
   return app;
