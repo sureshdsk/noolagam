@@ -117,4 +117,17 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
 CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id, idx);
 CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);`;
+CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  reviestatusw_text TEXT,
+  ishidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_book ON reviews(book_id, ishidden, created_at);`;
+

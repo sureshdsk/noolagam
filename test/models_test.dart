@@ -4,6 +4,7 @@ import 'package:tamil_ebook_reader/models/book.dart';
 import 'package:tamil_ebook_reader/models/chapter.dart';
 import 'package:tamil_ebook_reader/models/job.dart';
 import 'package:tamil_ebook_reader/models/reading_progress.dart';
+import 'package:tamil_ebook_reader/models/review.dart';
 
 void main() {
   group('Book', () {
@@ -169,6 +170,42 @@ void main() {
         updatedAt: DateTime.utc(2026, 8, 1),
       );
       expect(p.fraction, 1.0);
+    });
+  });
+
+  group('Review', () {
+    test('parses full JSON structure', () {
+      final json = {
+        'id': 'rev_123',
+        'book_id': 'ponniyin_selvan',
+        'user_id': 'dev-user',
+        'rating': 5,
+        'review_text': 'அருமையான புத்தகம்!',
+        'created_at': '2026-08-29T07:49:58.194Z',
+      };
+      final review = Review.fromJson(json);
+
+      expect(review.id, 'rev_123');
+      expect(review.bookId, 'ponniyin_selvan');
+      expect(review.userId, 'dev-user');
+      expect(review.rating, 5);
+      expect(review.reviewText, 'அருமையான புத்தகம்!');
+      expect(review.createdAt, DateTime.parse('2026-08-29T07:49:58.194Z'));
+    });
+
+    test('parses JSON with missing or null fields using safe defaults', () {
+      final json = {
+        'id': 'rev_456',
+        'rating': 3,
+      };
+      final review = Review.fromJson(json);
+
+      expect(review.id, 'rev_456');
+      expect(review.bookId, '');
+      expect(review.userId, '');
+      expect(review.rating, 3);
+      expect(review.reviewText, '');
+      expect(review.createdAt, isA<DateTime>());
     });
   });
 }

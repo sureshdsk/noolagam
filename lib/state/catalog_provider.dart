@@ -10,6 +10,8 @@ class CatalogProvider extends ChangeNotifier {
 
   final BookService _service;
 
+  BookService get service => _service;
+
   final List<Book> items = [];
   final Map<String, Book> _detailCache = {};
 

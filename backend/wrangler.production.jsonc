@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // PRODUCTION — deploy with `npm run deploy:prod`.
+  "name": "noolagam-api-production",
+  "main": "worker.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  "limits": { "cpu_ms": 300000 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "noolagam-catalog-production",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "vars": {
+    "AUTH_ENFORCE": "true",
+    "CORS_ORIGINS": "*",
+    "S3_REGION": "auto",
+    "S3_ENDPOINT": "https://00000000000000000000000000000000.r2.cloudflarestorage.com",
+    "S3_BUCKET": "noolagam-content-production"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+}

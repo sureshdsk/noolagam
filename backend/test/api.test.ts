@@ -271,3 +271,90 @@ describe("cover route", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("reviews API", () => {
+  it("returns empty list when no reviews exist", async () => {
+    const app = makeApp(await seed());
+    const res = await app.request("/v1/books/testbook/reviews");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: any[] };
+    expect(body.items).toEqual([]);
+  });
+
+  it("submits a valid review and auto-provisions the user profile", async () => {
+    const app = makeApp(await seed());
+    const res = await app.request("/v1/books/testbook/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 4, review_text: "Great book!" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: string;
+      book_id: string;
+      user_id: string;
+      rating: number;
+      review_text: string;
+      created_at: string;
+    };
+    expect(body.id).toBeDefined();
+    expect(body.book_id).toBe("testbook");
+    expect(body.user_id).toBe("dev-user");
+    expect(body.rating).toBe(4);
+    expect(body.review_text).toBe("Great book!");
+    expect(body.created_at).toBeDefined();
+  });
+
+  it("rejects invalid rating with 400", async () => {
+    const app = makeApp(await seed());
+    const res = await app.request("/v1/books/testbook/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 6, review_text: "Invalid rating" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns active reviews sorted by date", async () => {
+    const db = await seed();
+    const app = makeApp(db);
+    
+    // Submit review 1
+    await app.request("/v1/books/testbook/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 5, review_text: "Review 1" }),
+    });
+
+    // Submit review 2 (most recent)
+    await app.request("/v1/books/testbook/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 3, review_text: "Review 2" }),
+    });
+
+    const res = await app.request("/v1/books/testbook/reviews");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: any[] };
+    expect(body.items.length).toBe(2);
+    // The most recent review should be first (LIFO order by date)
+    expect(body.items[0].review_text).toBe("Review 2");
+    expect(body.items[0].rating).toBe(3);
+    expect(body.items[1].review_text).toBe("Review 1");
+    expect(body.items[1].rating).toBe(5);
+  });
+
+  it("404s for unknown or unpublished books", async () => {
+    const app = makeApp(await seed());
+    const res = await app.request("/v1/books/unknown/reviews");
+    expect(res.status).toBe(404);
+
+    const postRes = await app.request("/v1/books/unknown/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: 5, review_text: "Hello" }),
+    });
+    expect(postRes.status).toBe(404);
+  });
+});
+

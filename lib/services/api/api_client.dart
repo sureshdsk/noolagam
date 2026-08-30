@@ -90,6 +90,24 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> postJson(
+    String path,
+    Map<String, dynamic> data, {
+    bool authenticated = false,
+    Map<String, String> extraHeaders = const {},
+  }) async {
+    try {
+      final res = await dio.post(
+        path,
+        data: data,
+        options: await _options(authenticated, extraHeaders),
+      );
+      return res.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   Future<Map<String, dynamic>> postForm(
     String path,
     FormData form, {

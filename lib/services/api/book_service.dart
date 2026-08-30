@@ -1,6 +1,7 @@
 import '../../core/config.dart';
 import '../../models/book.dart';
 import '../../models/chapter.dart';
+import '../../models/review.dart';
 import 'api_client.dart';
 
 /// Client for `/v1/books*` endpoints: catalog, detail, chapter content.
@@ -46,5 +47,25 @@ class BookService {
     }
     final chapterJson = await _client.getAbsoluteJson(url);
     return ContentChapter.fromJson(chapterJson);
+  }
+
+  /// Fetches reviews for a specific book.
+  Future<List<Review>> getReviews(String bookId) async {
+    final json = await _client.getJson('/books/$bookId/reviews');
+    final items = json['items'] as List<dynamic>? ?? [];
+    return items.map((e) => Review.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Adds a new review for a book.
+  Future<Review> addReview(String bookId, int rating, String text) async {
+    final json = await _client.postJson(
+      '/books/$bookId/reviews',
+      {
+        'rating': rating,
+        'review_text': text,
+      },
+      authenticated: true,
+    );
+    return Review.fromJson(json);
   }
 }

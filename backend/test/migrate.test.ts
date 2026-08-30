@@ -72,7 +72,7 @@ describe("migrate", () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as { name: string }[];
     expect(rows.map((r) => r.name)).toContain("books");
-    expect(rows.length).toBe(12);
+    expect(rows.length).toBe(13);
   });
 
   it("is idempotent", async () => {

@@ -153,9 +153,26 @@ export const notificationPrefs = sqliteTable("notification_prefs", {
   lastReminderSentAt: text("last_reminder_sent_at"),
 });
 
+export const reviews = sqliteTable("reviews", {
+  id: text("id").primaryKey(),
+  bookId: text("book_id")
+    .notNull()
+    .references(() => books.id),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  rating: integer("rating").notNull(),
+  reviewText: text("reviestatusw_text"),
+  isHidden: integer("ishidden").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
 export type Book = typeof books.$inferSelect;
 export type NewBook = typeof books.$inferInsert;
 export type Chapter = typeof chapters.$inferSelect;
 export type NewChapter = typeof chapters.$inferInsert;
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
+export type Review = typeof reviews.$inferSelect;
+export type NewReview = typeof reviews.$inferInsert;
+
