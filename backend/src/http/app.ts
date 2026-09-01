@@ -6,6 +6,7 @@ import type { LlmConfig } from "../llm/client.js";
 import { bookRoutes } from "./routes/books.js";
 import { contentRoutes } from "./routes/content.js";
 import { jobsRoutes } from "./routes/jobs.js";
+import { reviewRoutes } from "./routes/reviews.js";
 import type { AuthDeps } from "./guards.js";
 import { problem } from "./problems.js";
 
@@ -34,6 +35,7 @@ export function createApp(deps: AppDeps): Hono {
 
   app.route("/v1/books", bookRoutes(deps.db));
   app.route("/v1/books", contentRoutes(deps.db, deps.store, deps.auth));
+  app.route("/v1", reviewRoutes(deps.db, deps.adminApiKey));
   app.route("/v1/jobs", jobsRoutes(deps));
 
   app.notFound((c) =>

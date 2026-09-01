@@ -114,7 +114,20 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
   last_reminder_sent_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  book_title TEXT NOT NULL,
+  book_author TEXT,
+  username TEXT NOT NULL,
+  review_text TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  is_hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id, idx);
 CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);`;
+CREATE INDEX IF NOT EXISTS idx_annotations_user_book ON annotations(user_id, book_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_reviews_book_created ON reviews(book_id, is_hidden, created_at DESC);`;

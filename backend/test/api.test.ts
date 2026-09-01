@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/http/app.js";
 import type { OrmDb } from "../src/db/index.js";
-import { books, chapters } from "../src/db/tables.js";
+import { books, chapters, reviews } from "../src/db/tables.js";
 import { openDb } from "../src/node/db.js";
 import { migrate } from "../src/db/migrate.js";
 import { MemoryStore } from "../src/storage/memory.js";
@@ -177,6 +177,83 @@ describe("GET /v1/books/:id/chapters", () => {
     const body = (await res.json()) as { items: { idx: number; word_count: number }[] };
     expect(body.items.length).toBe(2);
     expect(body.items[0]?.word_count).toBe(100);
+  });
+});
+
+describe("reviews API", () => {
+  it("allows guest users to create a review with book metadata", async () => {
+    const db = await seed();
+    const app = makeApp(db);
+    const res = await app.request("/v1/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "Guest User",
+        reviewText: "Very nice book.",
+        rating: 5,
+        bookId: "testbook",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: number;
+      book_id: string;
+      book_title: string;
+      book_author: string | null;
+      username: string;
+      review_text: string;
+      rating: number;
+      is_hidden: boolean;
+    };
+    expect(body.book_id).toBe("testbook");
+    expect(body.book_title).toBe("சோதனை நூல்");
+    expect(body.book_author).toBe("ஆசிரியர்");
+    expect(body.username).toBe("Guest User");
+    expect(body.is_hidden).toBe(false);
+
+    const saved = await db.select().from(reviews).where(eq(reviews.bookId, "testbook")).get();
+    expect(saved?.reviewText).toBe("Very nice book.");
+  });
+
+  it("returns visible reviews for a book and lets admin hide them", async () => {
+    const db = await seed();
+    await db.insert(reviews).values({
+      bookId: "testbook",
+      bookTitle: "சோதனை நூல்",
+      bookAuthor: "ஆசிரியர்",
+      username: "visible-user",
+      reviewText: "Good book",
+      rating: 4,
+      isHidden: false,
+    });
+    await db.insert(reviews).values({
+      bookId: "testbook",
+      bookTitle: "சோதனை நூல்",
+      bookAuthor: "ஆசிரியர்",
+      username: "hidden-user",
+      reviewText: "Hidden review",
+      rating: 2,
+      isHidden: true,
+    });
+
+    const app = makeApp(db, { adminApiKey: "secret123" });
+    const publicRes = await app.request("/v1/books/testbook/reviews");
+    expect(publicRes.status).toBe(200);
+    expect(((await publicRes.json()) as { items: { username: string }[] }).items.map((r) => r.username)).toEqual(["visible-user"]);
+
+    const adminRes = await app.request("/v1/reviews", { headers: { "x-admin-key": "secret123" } });
+    expect(adminRes.status).toBe(200);
+    const adminBody = (await adminRes.json()) as { items: { username: string; is_hidden: boolean }[] };
+    expect(adminBody.items.map((r) => r.username).sort()).toEqual(["hidden-user", "visible-user"]);
+
+    const hideRes = await app.request(`/v1/reviews/${1}/hidden`, {
+      method: "PATCH",
+      headers: { "x-admin-key": "secret123", "content-type": "application/json" },
+      body: JSON.stringify({ hidden: true }),
+    });
+    expect(hideRes.status).toBe(200);
+    expect(((await hideRes.json()) as { hidden: boolean }).hidden).toBe(true);
   });
 });
 
